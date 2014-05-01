@@ -259,6 +259,20 @@ static void tcp_revsw_info(struct sock *sk, u32 ext,
 	}
 }
 
+static void tcp_revsw_syn_post_config(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	/*
+	 * Modify the congestion and send windows.  Also fix the
+	 * sndbuf size.  Will be changed to use sysctls when they
+	 * are available.
+	 */
+	tp->snd_wnd = sysctl_tcp_limit_output_bytes;
+	tp->snd_cwnd = min(100, tp->snd_wnd / tcp_current_mss(sk));
+	sk->sk_sndbuf = 3 * tp->snd_wnd;
+}
+
 static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.init		= tcp_revsw_init,
 	.ssthresh	= tcp_reno_ssthresh,
@@ -267,6 +281,7 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.cwnd_event	= tcp_revsw_event,
 	.get_info	= tcp_revsw_info,
 	.pkts_acked	= tcp_revsw_pkts_acked,
+	.syn_post_config = tcp_revsw_syn_post_config,
 
 	.owner		= THIS_MODULE,
 	.name		= "revsw"
