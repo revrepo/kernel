@@ -791,6 +791,8 @@ struct tcp_congestion_ops {
 	void (*pkts_acked)(struct sock *sk, u32 num_acked, s32 rtt_us);
 	/* get info for inet_diag (optional) */
 	void (*get_info)(struct sock *sk, u32 ext, struct sk_buff *skb);
+	/* SYN post config */
+	void (*syn_post_config)(struct sock *sk);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;

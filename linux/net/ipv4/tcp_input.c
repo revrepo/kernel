@@ -5711,6 +5711,9 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 		tcp_initialize_rcv_mss(sk);
 		tcp_fast_path_on(tp);
+
+		if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->syn_post_config)
+			icsk->icsk_ca_ops->syn_post_config(sk);
 		break;
 
 	case TCP_FIN_WAIT1: {
