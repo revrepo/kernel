@@ -3,7 +3,7 @@
  *   RevSw TCP Congestion Control Algorithm
  *
  * Starting off RevSw will be utilizing the Westwood CCA with
- * some minor tweaks to get better throughput and congestion 
+ * some minor tweaks to get better throughput and congestion
  * control.
  *
  */
@@ -17,17 +17,17 @@
 
 /* TCP RevSw structure */
 struct revsw {
-	u32    bw_ns_est;        /* first bandwidth estimation..not too smoothed 8) */
-	u32    bw_est;           /* bandwidth estimate */
-	u32    rtt_win_sx;       /* here starts a new evaluation... */
+	u32    bw_ns_est;  /* first bandwidth estimation..not too smoothed 8) */
+	u32    bw_est;     /* bandwidth estimate */
+	u32    rtt_win_sx; /* here starts a new evaluation... */
 	u32    bk;
-	u32    snd_una;          /* used for evaluating the number of acked bytes */
+	u32    snd_una;    /* used for evaluating the number of acked bytes */
 	u32    cumul_ack;
 	u32    accounted;
 	u32    rtt;
-	u32    rtt_min;          /* minimum observed RTT */
-	u8     first_ack;        /* flag which infers that this is the first ack */
-	u8     reset_rtt_min;    /* Reset RTT min to next RTT sample*/
+	u32    rtt_min;    /* minimum observed RTT */
+	u8     first_ack;  /* flag which infers that this is the first ack */
+	u8     reset_rtt_min; /* Reset RTT min to next RTT sample*/
 };
 
 
