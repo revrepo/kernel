@@ -273,6 +273,14 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 	sk->sk_sndbuf = 3 * tp->snd_wnd;
 }
 
+static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if ((nwin > sysctl_tcp_limit_output_bytes) || (nwin == 0))
+		tp->snd_wnd = nwin;
+}
+
 static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.init		= tcp_revsw_init,
 	.ssthresh	= tcp_reno_ssthresh,
@@ -282,6 +290,7 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.get_info	= tcp_revsw_info,
 	.pkts_acked	= tcp_revsw_pkts_acked,
 	.syn_post_config = tcp_revsw_syn_post_config,
+	.set_nwin_size = tcp_revsw_set_nwin_size,
 
 	.owner		= THIS_MODULE,
 	.name		= "revsw"
