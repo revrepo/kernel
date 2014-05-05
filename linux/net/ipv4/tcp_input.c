@@ -3188,6 +3188,7 @@ static inline bool tcp_may_update_window(const struct tcp_sock *tp,
 static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32 ack,
 				 u32 ack_seq)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
@@ -3200,7 +3201,10 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 		tcp_update_wl(tp, ack_seq);
 
 		if (tp->snd_wnd != nwin) {
-			tp->snd_wnd = nwin;
+			if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->set_nwin_size)
+				icsk->icsk_ca_ops->set_nwin_size(sk, nwin);
+			else
+				tp->snd_wnd = nwin;
 
 			/* Note, it is the only place, where
 			 * fast path is recovered for sending TCP.

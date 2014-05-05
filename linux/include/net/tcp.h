@@ -793,6 +793,8 @@ struct tcp_congestion_ops {
 	void (*get_info)(struct sock *sk, u32 ext, struct sk_buff *skb);
 	/* SYN post config */
 	void (*syn_post_config)(struct sock *sk);
+	/* set new window size */
+	void (*set_nwin_size)(struct sock *sk, u32 nwin);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;
