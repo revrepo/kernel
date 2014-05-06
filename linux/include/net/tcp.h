@@ -795,6 +795,9 @@ struct tcp_congestion_ops {
 	void (*syn_post_config)(struct sock *sk);
 	/* set new window size */
 	void (*set_nwin_size)(struct sock *sk, u32 nwin);
+	/* handle nagle test */
+	bool (*handle_nagle_test)(struct sock *sk, struct sk_buff *skb, 
+				  unsigned int mss_now, int nonagle);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;

@@ -1818,6 +1818,7 @@ static int tcp_mtu_probe(struct sock *sk)
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
@@ -1859,10 +1860,16 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			break;
 
 		if (tso_segs == 1) {
-			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
-						     (tcp_skb_is_last(sk, skb) ?
-						      nonagle : TCP_NAGLE_PUSH))))
-				break;
+			if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->handle_nagle_test) {
+				if (unlikely(!icsk->icsk_ca_ops->handle_nagle_test(sk, 
+								skb, mss_now, nonagle)))
+					break;
+			} else {
+				if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
+							     (tcp_skb_is_last(sk, skb) ?
+							      nonagle : TCP_NAGLE_PUSH))))
+					break;
+			}
 		} else {
 			if (!push_one && tcp_tso_should_defer(sk, skb))
 				break;
