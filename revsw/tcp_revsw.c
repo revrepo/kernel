@@ -281,6 +281,13 @@ static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 		tp->snd_wnd = nwin;
 }
 
+static bool 
+tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb, 
+			    unsigned int mss_now, int nonagle)
+{
+	return true;
+}
+
 static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.init		= tcp_revsw_init,
 	.ssthresh	= tcp_reno_ssthresh,
@@ -291,6 +298,7 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.pkts_acked	= tcp_revsw_pkts_acked,
 	.syn_post_config = tcp_revsw_syn_post_config,
 	.set_nwin_size = tcp_revsw_set_nwin_size,
+	.handle_nagle_test = tcp_revsw_handle_nagle_test,
 
 	.owner		= THIS_MODULE,
 	.name		= "revsw"
