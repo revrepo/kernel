@@ -52,7 +52,6 @@ int sysctl_tcp_workaround_signed_windows __read_mostly = 0;
 
 /* Default TSQ limit of two TSO segments */
 int sysctl_tcp_limit_output_bytes __read_mostly = 131072;
-EXPORT_SYMBOL(sysctl_tcp_limit_output_bytes);
 
 /* This limits the percentage of the congestion window which we
  * will allow a single TSO frame to consume.  Building TSO frames
