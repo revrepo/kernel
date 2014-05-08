@@ -14,6 +14,55 @@
 
 #include <net/tcp.h>
 
+/* TCP RevSw SYSCTL support */
+#define REVSW_RCV_WND_MIN	6000
+#define REVSW_RCV_WND_MAX	393216
+#define REVSW_RCV_WND_DEFAULT	131072
+#define REVSW_CONG_WND_MIN	10
+#define REVSW_CONG_WND_MAX	200
+#define REVSW_CONG_WND_DEFAULT	100
+#define REVSW_RTO_DEFAULT	63
+
+static int revsw_rcv_wnd_min __read_mostly = REVSW_RCV_WND_MIN;
+static int revsw_rcv_wnd_max __read_mostly = REVSW_RCV_WND_MAX;
+static int revsw_rcv_wnd __read_mostly = REVSW_RCV_WND_DEFAULT;
+
+static int revsw_cong_wnd_min __read_mostly = REVSW_CONG_WND_MIN;
+static int revsw_cong_wnd_max __read_mostly = REVSW_CONG_WND_MAX;
+static int revsw_cong_wnd __read_mostly = REVSW_CONG_WND_DEFAULT;
+
+static int revsw_rto __read_mostly __read_mostly = REVSW_RTO_DEFAULT;
+
+static struct ctl_table_header *revsw_ctl_table_hdr;
+
+static struct ctl_table revsw_ctl_table[] = {
+	{
+		.procname = "revsw_rcv_wnd",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_rcv_wnd,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_rcv_wnd_min,
+		.extra2 = &revsw_rcv_wnd_max,
+	},
+	{
+		.procname = "revsw_cong_wnd",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_cong_wnd,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_cong_wnd_min,
+		.extra2 = &revsw_cong_wnd_max,
+	},
+	{
+		.procname = "revsw_rto",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_rto,
+		.proc_handler = &proc_dointvec_ms_jiffies,
+	},
+	{}
+};
 
 /* TCP RevSw structure */
 struct revsw {
@@ -268,8 +317,8 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 	 * sndbuf size.  Will be changed to use sysctls when they
 	 * are available.
 	 */
-	tp->snd_wnd = sysctl_tcp_limit_output_bytes;
-	tp->snd_cwnd = min(100, tp->snd_wnd / tcp_current_mss(sk));
+	tp->snd_wnd = revsw_rcv_wnd;
+	tp->snd_cwnd = revsw_cong_wnd;
 	sk->sk_sndbuf = 3 * tp->snd_wnd;
 }
 
@@ -277,7 +326,7 @@ static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if ((nwin > sysctl_tcp_limit_output_bytes) || (nwin == 0))
+	if ((nwin > revsw_cong_wnd) || (nwin == 0))
 		tp->snd_wnd = nwin;
 }
 
@@ -307,12 +356,18 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 static int __init tcp_revsw_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct revsw) > ICSK_CA_PRIV_SIZE);
+
+	revsw_ctl_table_hdr = register_sysctl("revsw", revsw_ctl_table);
+	if (!revsw_ctl_table_hdr)
+		return -EFAULT;
+
 	return tcp_register_congestion_control(&tcp_revsw);
 }
 
 static void __exit tcp_revsw_unregister(void)
 {
 	tcp_unregister_congestion_control(&tcp_revsw);
+	unregister_sysctl_table(revsw_ctl_table_hdr);
 }
 
 module_init(tcp_revsw_register);
