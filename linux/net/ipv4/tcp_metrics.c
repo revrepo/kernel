@@ -20,7 +20,7 @@
 #include <net/tcp.h>
 #include <net/genetlink.h>
 
-int sysctl_tcp_nometrics_save __read_mostly;
+int sysctl_tcp_nometrics_save __read_mostly = 1;
 
 struct tcp_fastopen_metrics {
 	u16	mss;
