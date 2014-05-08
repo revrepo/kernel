@@ -338,6 +338,7 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 }
 
 static struct tcp_congestion_ops tcp_revsw __read_mostly = {
+	.flags		= TCP_CONG_RTT_STAMP,
 	.init		= tcp_revsw_init,
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= tcp_reno_cong_avoid,
