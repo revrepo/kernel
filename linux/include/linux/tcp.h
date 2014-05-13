@@ -320,6 +320,10 @@ struct tcp_sock {
 	 * socket. Used to retransmit SYNACKs etc.
 	 */
 	struct request_sock *fastopen_rsk;
+
+	/* TCP Session Database */
+	void *session_info;
+	struct delayed_work session_work;
 };
 
 enum tsq_flags {

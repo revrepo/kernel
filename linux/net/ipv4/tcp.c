@@ -2873,6 +2873,30 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 	case TCP_TIMESTAMP:
 		val = tcp_time_stamp + tp->tsoffset;
 		break;
+	case TCP_SESSION_INFO: {
+		if (get_user(len, optlen))
+			return -EFAULT;
+
+		if (len > 0) {
+			unsigned char sinfo[len];
+			struct inet_connection_sock *icsk = inet_csk(sk);
+
+			if (inet_csk(sk)->icsk_ca_ops->get_session_info) {
+				if (icsk->icsk_ca_ops->get_session_info(sk,
+									sinfo,
+									&len))
+					return -EFAULT;
+			
+				if (put_user(len, optlen))
+ 					return -EFAULT;
+ 				if (copy_to_user(optval, &sinfo, len))
+ 					return -EFAULT;
+
+ 				return 0;
+			}
+		}
+		return -EFAULT;
+	}
 	default:
 		return -ENOPROTOOPT;
 	}
