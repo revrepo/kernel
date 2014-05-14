@@ -2447,6 +2447,16 @@ static void tcp_cwnd_reduction(struct sock *sk, const int prior_unsacked,
 
 	sndcnt = max(sndcnt, (fast_rexmit ? 1 : 0));
 	tp->snd_cwnd = tcp_packets_in_flight(tp) + sndcnt;
+
+	if ((tcp_send_head(sk) == NULL) &&
+	    (inet_csk(sk)->icsk_ca_state != TCP_CA_Loss)) {
+		/*
+		 * We have no unsent data to send and we are not in "loss" state. This may be case
+		 *  of tail drop. Increase the CWIN from what it is now as PRR would have it close 
+		 * to packets_in_flight
+		 */
+		tcp_sk(sk)->snd_cwnd += tcp_sk(sk)->fackets_out;
+	}
 }
 
 static inline void tcp_end_cwnd_reduction(struct sock *sk)
