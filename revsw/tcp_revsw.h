@@ -40,10 +40,10 @@
 #define TCP_SESSION_INFO_VERSION 1
 
 struct tcp_session_info {
-	__u32   version;
-	__u32   cookie;
-	__u32   latency;
-	__u32   bandwidth;
+	__u32 version;
+	__u32 cookie;
+	__u32 latency;
+	__u32 bandwidth;
 };
 
 struct tcp_session_entry {
@@ -55,8 +55,8 @@ struct tcp_session_entry {
 };
 
 struct tcp_session_info_hash {
-	spinlock_t      lock;
-	struct hlist_head       hlist;
+	struct hlist_head hlist;
+	spinlock_t lock;
 };
 
 /********************************************************************
@@ -68,17 +68,17 @@ struct tcp_session_info_hash {
 /* TCP RevSw structure */
 struct revsw {
 	struct tcp_session_entry *session;
-	u32    bw_ns_est;  /* first bandwidth estimation..not smoothed 8) */
-	u32    bw_est;     /* bandwidth estimate */
-	u32    rtt_win_sx; /* here starts a new evaluation... */
-	u32    bk;
-	u32    snd_una;    /* used for evaluating the number of acked bytes */
-	u32    cumul_ack;
-	u32    accounted;
-	u32    rtt;
-	u32    rtt_min;    /* minimum observed RTT */
-	u8     first_ack;  /* flag which infers that this is the first ack */
-	u8     reset_rtt_min; /* Reset RTT min to next RTT sample*/
+	u32 bw_ns_est;  /* first bandwidth estimation..not smoothed 8) */
+	u32 bw_est;     /* bandwidth estimate */
+	u32 rtt_win_sx; /* here starts a new evaluation... */
+	u32 bk;
+	u32 snd_una;    /* used for evaluating the number of acked bytes */
+	u32 cumul_ack;
+	u32 accounted;
+	u32 rtt;
+	u32 rtt_min;    /* minimum observed RTT */
+	u8  first_ack;  /* flag which infers that this is the first ack */
+	u8  reset_rtt_min; /* Reset RTT min to next RTT sample*/
 };
 
 /* TCP RevSw functions and constants */
