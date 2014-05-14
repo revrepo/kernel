@@ -2881,7 +2881,7 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 			unsigned char sinfo[len];
 			struct inet_connection_sock *icsk = inet_csk(sk);
 
-			if (inet_csk(sk)->icsk_ca_ops->get_session_info) {
+			if (icsk->icsk_ca_ops->get_session_info) {
 				if (icsk->icsk_ca_ops->get_session_info(sk,
 									sinfo,
 									&len))
