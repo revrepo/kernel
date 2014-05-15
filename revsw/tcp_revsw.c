@@ -105,6 +105,32 @@ static int tcp_session_hash_init(void)
 	return 0;
 }
 
+static void tcp_session_hash_cleanup(void)
+{
+	__u64 i;
+	struct tcp_session_info_hash *thash;
+	struct tcp_session_entry *session;
+	struct hlist_node *tmp;
+
+	for (i = 0; i < TCP_SESSION_HASH_SIZE; i++) {
+		thash = &tcpsi_hash[i];
+		if (hlist_empty(&thash->hlist))
+			continue;
+
+		spin_lock_bh(&thash->lock);
+
+		hlist_for_each_entry_safe(session, tmp, &thash->hlist, node) {
+			hlist_del(&session->node);
+			cancel_delayed_work_sync(&session->work);
+			kfree(session);
+		}
+
+		spin_unlock_bh(&thash->lock);
+	}
+
+	kfree(tcpsi_hash);
+}
+
 static void tcp_session_delete_work_handler(struct work_struct *work)
 {
 	struct tcp_session_entry *session = container_of(to_delayed_work(work),
@@ -543,6 +569,7 @@ static void __exit tcp_revsw_unregister(void)
 {
 	tcp_unregister_congestion_control(&tcp_revsw);
 	unregister_sysctl_table(revsw_ctl_table_hdr);
+	tcp_session_hash_cleanup();
 }
 
 module_init(tcp_revsw_register);
