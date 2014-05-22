@@ -92,7 +92,7 @@ int sysctl_tcp_challenge_ack_limit = 100;
 int sysctl_tcp_stdurg __read_mostly;
 int sysctl_tcp_rfc1337 __read_mostly;
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
-int sysctl_tcp_frto __read_mostly = 2;
+int sysctl_tcp_frto __read_mostly = 1;
 
 int sysctl_tcp_thin_dupack __read_mostly;
 
