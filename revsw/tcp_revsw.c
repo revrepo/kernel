@@ -21,9 +21,10 @@
  * RevSw sysctl support
  *
  ********************************************************************/
-static int revsw_rcv_wnd_min __read_mostly = REVSW_RCV_WND_MIN;
-static int revsw_rcv_wnd_max __read_mostly = REVSW_RCV_WND_MAX;
-static int revsw_rcv_wnd __read_mostly = REVSW_RCV_WND_DEFAULT;
+static int revsw_rwnd_mplr_min __read_mostly = REVSW_RWND_MPLR_MIN;
+static int revsw_rwnd_mplr_max __read_mostly = REVSW_RWND_MPLR_MAX;
+static int revsw_sm_rcv_wnd __read_mostly = REVSW_RWND_MPLR_DEFAULT;
+static int revsw_lrg_rcv_wnd __read_mostly = REVSW_LARGE_RWND_MPLR;
 
 static int revsw_cong_wnd_min __read_mostly = REVSW_CONG_WND_MIN;
 static int revsw_cong_wnd_max __read_mostly = REVSW_CONG_WND_MAX;
@@ -39,13 +40,22 @@ static struct ctl_table_header *revsw_ctl_table_hdr;
 
 static struct ctl_table revsw_ctl_table[] = {
 	{
-		.procname = "revsw_rcv_wnd",
+		.procname = "revsw_sm_rcv_wnd",
 		.maxlen = sizeof(int),
 		.mode = 0644,
-		.data = &revsw_rcv_wnd,
+		.data = &revsw_sm_rcv_wnd,
 		.proc_handler = &proc_dointvec_minmax,
-		.extra1 = &revsw_rcv_wnd_min,
-		.extra2 = &revsw_rcv_wnd_max,
+		.extra1 = &revsw_rwnd_mplr_min,
+		.extra2 = &revsw_rwnd_mplr_max,
+	},
+	{
+		.procname = "revsw_lrg_rcv_wnd",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_lrg_rcv_wnd,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_rwnd_mplr_min,
+		.extra2 = &revsw_rwnd_mplr_max,
 	},
 	{
 		.procname = "revsw_cong_wnd",
@@ -173,7 +183,8 @@ static void tcp_session_add(struct tcp_sock *tp)
 	session->info.bandwidth = TCP_SESSION_DEFAULT_BW;
 	INIT_DELAYED_WORK(&session->work, tcp_session_delete_work_handler);
 
-	hash = hash_32((addr & TCP_SESSION_KEY_BITMASK), TCP_SESSION_HASH_BITS);
+	hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
+			TCP_SESSION_HASH_BITS);
 	thash = &tcpsi_hash[hash];
 
 	spin_lock_bh(&thash->lock);
@@ -592,7 +603,10 @@ static inline u32 tcp_revsw_do_filter(u32 a, u32 b)
 
 static void tcp_revsw_filter(struct revsw *w, u32 delta)
 {
-	/* If the filter is empty fill it with the first sample of bandwidth  */
+	/*
+	 * If the filter is empty fill it with the first
+	 * sample of bandwidth
+	 */
 	if (w->bw_ns_est == 0 && w->bw_est == 0) {
 		w->bw_ns_est = w->bk / delta;
 		w->bw_est = w->bw_ns_est;
@@ -782,13 +796,16 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	/*
-	 * Modify the congestion and send windows.  Also fix the
-	 * sndbuf size.  Will be changed to use sysctls when they
-	 * are available.
-	 */
-	tp->snd_wnd = revsw_rcv_wnd;
-	tp->snd_cwnd = revsw_cong_wnd;
+	if (tp->snd_wnd < REVSW_LARGE_RWND_SIZE)
+		tp->snd_wnd *= revsw_lrg_rcv_wnd;
+	else
+		tp->snd_wnd *= revsw_sm_rcv_wnd;
+
+	if (revsw_cong_wnd == 0)
+		tp->snd_cwnd = tp->snd_wnd / 1024 + 1;
+	else
+		tp->snd_cwnd = revsw_cong_wnd;
+
 	sk->sk_sndbuf = 3 * tp->snd_wnd;
 }
 
