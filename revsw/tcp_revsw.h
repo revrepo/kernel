@@ -15,12 +15,23 @@
  * RevSw sysctl support
  *
  ********************************************************************/
-#define REVSW_RCV_WND_MIN       6000
-#define REVSW_RCV_WND_MAX       393216
-#define REVSW_RCV_WND_DEFAULT   131072
-#define REVSW_CONG_WND_MIN      10
+
+#define REVSW_RWND_MPLR_MIN		1
+#define REVSW_RWND_MPLR_MAX		5
+#define REVSW_RWND_MPLR_DEFAULT		3
+#define REVSW_LARGE_RWND_MPLR		2
+#define REVSW_LARGE_RWND_SIZE		65536
+
+/*
+ * Initial Congestion Window
+ * Default of 0 means that the system will determine the
+ * initial cwnd based on the RWND and MTU.  Otherwise is
+ * will take what the user has set.
+ */
+#define REVSW_CONG_WND_MIN      0
 #define REVSW_CONG_WND_MAX      200
-#define REVSW_CONG_WND_DEFAULT  100
+#define REVSW_CONG_WND_DEFAULT  REVSW_CONG_WND_MIN
+
 #define REVSW_RTO_DEFAULT       63
 
 /********************************************************************
