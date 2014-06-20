@@ -68,6 +68,7 @@ typedef enum revsw_rre_loglevel_ {
 	REVSW_RRE_LOG_NOLOG = 0,
 	REVSW_RRE_LOG_ERR,
 	REVSW_RRE_LOG_INFO,
+	REVSW_RRE_LOG_SACK,
 	REVSW_RRE_LOG_VERBOSE,
 } revsw_rre_loglevel;
 
@@ -76,12 +77,21 @@ typedef enum revsw_rre_loglevel_ {
  * RevSw TCP RRE Modes
  *
  ********************************************************************/
-typedef enum _rev_rre_mode {
+typedef enum _rev_rre_mode_ {
 	TCP_REV_RRE_MODE_INVALID = 0,
 	TCP_REV_RRE_MODE_INIT,
 	TCP_REV_RRE_MODE_BM,
 	TCP_REV_RRE_MODE_MONITOR,
-} rev_rre_mode;
+} rev_rre_mode_e;
+
+typedef enum _rev_rre_state_ {
+	TCP_REV_RRE_STATE_INVALID = 0,
+	TCP_REV_RRE_STATE_FILL,
+	TCP_REV_RRE_STATE_DRAIN,
+	TCP_REV_RRE_STATE_FORCE_DRAIN,
+	TCP_REV_RRE_STATE_SACK,
+	TCP_REV_RRE_STATE_SACK_DONE,
+} rev_rre_state_e;
 
 /********************************************************************
  *
@@ -91,7 +101,8 @@ typedef enum _rev_rre_mode {
 
 struct revsw_rre {
 	/* Revsw variables */
-	u32 rev_first_seq; // check if we can use an existing variable
+	u32 rev_store_seq; // check if we can use an existing variable
+	u32 rev_rre_ts_tsecr;
 	u32 rev_rre_ts_r1;
 	u32 rev_rre_ts_r2;
 	u32 rev_rre_ack_r1;
@@ -118,6 +129,8 @@ struct revsw_rre {
 	u32 rev_rre_calc_ts;
 	u32 rev_init_cwnd;
 	u8 rev_rre_mode;
+	u8 rev_rre_state;
+	u32 rev_last_sacked_out;
 //	ICSK_CA_PRIV_SIZE 24 u32
 };
 
