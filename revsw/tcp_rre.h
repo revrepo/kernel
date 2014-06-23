@@ -112,10 +112,9 @@ struct revsw_rre {
 	u32 rev_leak_start_ts;
 	u32 rev_leak_sent_ts;
 	u32 rev_bytes_sent_this_leak;
-
 	u32 rev_sending_rate; 	//  sending_rate is in bytes/sec
 
-	// 10
+	// 11
 
 	//struct ewma rev_receiving_rate;
 	u32 rev_rre_t;  		// number of bytes.
@@ -124,13 +123,11 @@ struct revsw_rre {
 	int rev_rre_RDmin;      // in ticks
 	u32 rev_rtt_min;        // in miliseconds
 
-	u32 rev_rre_last_ts;
-	u32 rev_rre_last_ack;
-	u32 rev_rre_calc_ts;
 	u32 rev_init_cwnd;
+	u32 rev_last_sacked_out;
+	u32 rre_sack_time_stamp;
 	u8 rev_rre_mode;
 	u8 rev_rre_state;
-	u32 rev_last_sacked_out;
 //	ICSK_CA_PRIV_SIZE 24 u32
 };
 
