@@ -100,21 +100,18 @@ typedef enum _rev_rre_state_ {
  ********************************************************************/
 
 struct revsw_rre {
-	/* Revsw variables */
-	u32 rev_store_seq; // check if we can use an existing variable
-	u32 rev_rre_ts_tsecr;
-	u32 rev_rre_ts_r1;
-	u32 rev_rre_ts_r2;
 	u32 rev_rre_ack_r1;
+	u32 rev_rre_ts_r1;
+	/* The following 2 variables are overloaded. They are used differnetly in INIT and BM modes. */
 	u32 rev_rre_ack_r2;
+	u32 rev_rre_ts_r2;
 
 	u32 rev_last_snd_nxt;
 	u32 rev_leak_start_ts;
-	u32 rev_leak_sent_ts;
 	u32 rev_bytes_sent_this_leak;
 	u32 rev_sending_rate; 	//  sending_rate is in bytes/sec
 
-	// 11
+	// 8
 
 	//struct ewma rev_receiving_rate;
 	u32 rev_rre_t;  		// number of bytes.
@@ -126,6 +123,9 @@ struct revsw_rre {
 	u32 rev_init_cwnd;
 	u32 rev_last_sacked_out;
 	u32 rre_sack_time_stamp;
+	u32	rev_rre_first_rtt;
+
+	// 17
 	u8 rev_rre_mode;
 	u8 rev_rre_state;
 //	ICSK_CA_PRIV_SIZE 24 u32
