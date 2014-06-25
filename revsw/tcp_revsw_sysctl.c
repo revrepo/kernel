@@ -51,7 +51,9 @@ static int revsw_tcp_session_ttl_max __read_mostly = TCP_SESSION_TTL_MAX;
 int revsw_tcp_session_ttl __read_mostly = TCP_SESSION_TTL_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_session_ttl);
 
-static int revsw_rto __read_mostly __read_mostly = REVSW_RTO_DEFAULT;
+static int revsw_rto __read_mostly = REVSW_RTO_DEFAULT;
+int revsw_tcp_rre_loglevel __read_mostly = REVSW_RRE_LOG_DEFAULT;
+EXPORT_SYMBOL_GPL(revsw_tcp_rre_loglevel);
 
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
@@ -99,6 +101,14 @@ static struct ctl_table revsw_ctl_table[] = {
 		.extra1	= &revsw_tcp_session_ttl_min,
 		.extra2	= &revsw_tcp_session_ttl_max,
 	},
+	{
+		.procname		= "revsw_tcp_rre_loglevel",
+		.maxlen 		= sizeof(int),
+		.mode			= 0644,
+		.data			= &revsw_tcp_rre_loglevel,
+		.proc_handler	= &proc_dointvec,
+	},
+
 	{}
 };
 

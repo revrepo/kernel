@@ -14,82 +14,12 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
+#include "tcp_revsw_sysctl.h"
 #include "tcp_rre.h"
+#include "tcp_revsw_session_db.h"
 
-#include <linux/debugfs.h>
+
 #include <linux/kernel.h>
-
-
-/********************************************************************
- *
- * RevSw sysctl support
- *
- ********************************************************************/
-static int rre_revsw_rcv_wnd_min __read_mostly = REVSW_RCV_WND_MIN;
-static int rre_revsw_rcv_wnd_max __read_mostly = REVSW_RCV_WND_MAX;
-static int rre_revsw_rcv_wnd __read_mostly = REVSW_RCV_WND_DEFAULT;
-
-static int rre_revsw_cong_wnd_min __read_mostly = REVSW_CONG_WND_MIN;
-static int rre_revsw_cong_wnd_max __read_mostly = REVSW_CONG_WND_MAX;
-static int rre_revsw_cong_wnd __read_mostly = REVSW_CONG_WND_DEFAULT;
-
-static int rre_revsw_tcp_session_ttl_min __read_mostly = 1;
-static int rre_revsw_tcp_session_ttl_max __read_mostly = TCP_SESSION_TTL_MAX;
-static int rre_revsw_tcp_session_ttl __read_mostly = TCP_SESSION_TTL_DEFAULT;
-
-static int rre_revsw_rto __read_mostly = REVSW_RTO_DEFAULT;
-static int rre_revsw_tcp_rre_loglevel __read_mostly = REVSW_RRE_LOG_NOLOG;
-
-
-static struct ctl_table_header *revsw_ctl_table_hdr;
-
-static struct ctl_table revsw_ctl_table[] = {
-	{
-		.procname = "rre_revsw_rcv_wnd",
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.data = &rre_revsw_rcv_wnd,
-		.proc_handler = &proc_dointvec_minmax,
-		.extra1 = &rre_revsw_rcv_wnd_min,
-		.extra2 = &rre_revsw_rcv_wnd_max,
-	},
-	{
-		.procname = "rre_revsw_cong_wnd",
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.data = &rre_revsw_cong_wnd,
-		.proc_handler = &proc_dointvec_minmax,
-		.extra1 = &rre_revsw_cong_wnd_min,
-		.extra2 = &rre_revsw_cong_wnd_max,
-	},
-	{
-		.procname = "rre_revsw_rto",
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.data = &rre_revsw_rto,
-		.proc_handler = &proc_dointvec_ms_jiffies,
-	},
-	{
-		.procname       = "rre_revsw_tcp_session_ttl",
-		.data           = &rre_revsw_tcp_session_ttl,
-		.maxlen         = sizeof(int),
-		.mode           = 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &rre_revsw_tcp_session_ttl_min,
-		.extra2		= &rre_revsw_tcp_session_ttl_max,
-	},
-	{
-		.procname		= "rre_revsw_tcp_rre_loglevel",
-		.maxlen =		sizeof(int),
-		.mode = 		0644,
-		.data = 		&rre_revsw_tcp_rre_loglevel,
-		.proc_handler = &proc_dointvec,
-	},
-	{}
-};
-/********************************************************************
- * End RevSw sysctl support
- ********************************************************************/
 
 /********************************************************************
  *
@@ -100,9 +30,16 @@ static struct ctl_table revsw_ctl_table[] = {
 #define ASSERTMSG(expr,string)  if (!(expr)) {\
 							           printk ("Assertion failed: \n" string );\
 				                 while (1);}
+typedef enum revsw_rre_loglevel_ {
+	REVSW_RRE_LOG_NOLOG = REVSW_RRE_LOG_DEFAULT,
+	REVSW_RRE_LOG_ERR,
+	REVSW_RRE_LOG_INFO,
+	REVSW_RRE_LOG_SACK,
+	REVSW_RRE_LOG_VERBOSE,
+} revsw_rre_loglevel;
 
 #define LOG_IT(loglevel, format, ...) \
-	if(rre_revsw_tcp_rre_loglevel && rre_revsw_tcp_rre_loglevel >= loglevel)  { \
+	if(revsw_tcp_rre_loglevel && revsw_tcp_rre_loglevel >= loglevel)  { \
 		if(loglevel == REVSW_RRE_LOG_ERR)	\
 			printk("****** ERR ->");	\
 		else if(loglevel == REVSW_RRE_LOG_INFO)	\
@@ -110,11 +47,12 @@ static struct ctl_table revsw_ctl_table[] = {
 		printk(format, ## __VA_ARGS__);	\
 	}
 
-#define TCP_RRE_SET_STATE(rre, state) \
+#define TCP_RRE_SET_STATE(rre, state)  { \
 	LOG_IT(REVSW_RRE_LOG_INFO, "Setting State from %u to %u\n", rre->rev_rre_state, state);	\
-	rre->rev_rre_state = state;
+	rre->rev_rre_state = state;	\
+}
 
-/* Assumptuion: receiver tick is same as sender tick */
+// TODO: Temp Assumptuion: receiver tick is same as sender tick
 static u32 rev_rre_receive_rate(struct tcp_sock *tp, struct revsw_rre *rre, u32 ack)
 {
 	unsigned long r_rate;
@@ -249,9 +187,15 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 		rre->rev_rre_ts_r2 		= tp->rx_opt.rcv_tsecr;
 		LOG_IT(REVSW_RRE_LOG_INFO, "rtt: %u, HS tsval %u\n", 
 				rre->rev_rre_first_rtt, tp->rev_rre_hs_tsval);
-	} else if (ack >= rre->rev_rre_ack_r2 + (tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE /*rre->rev_init_cwnd * 0.8*/)) { // after we get ack for > 80% CWND packets
+	} else if (ack >= 
+		rre->rev_rre_ack_r2 + (tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE)) {
 
-		if(((tp->rx_opt.rcv_tsecr - rre->rev_rre_ts_r2) /* + ((tp->srtt >> 3)/2)*/) < (tp->rx_opt.rcv_tsval - rre->rev_rre_ts_r1)) {
+		// TODO: Do we ewant to check if sending_rate <<< receiving_rate ?  
+		// TODO: Ex: Sending_rate + ((tp->srtt >> 3)/2) < receiving_rate
+
+		/* if (sending_rate < receiving rate) */
+		if((tp->rx_opt.rcv_tsecr - rre->rev_rre_ts_r2) < 
+								(tp->rx_opt.rcv_tsval - rre->rev_rre_ts_r1)) {
 			/*
 			 * If we receive TCP_RRE_PACKETS_REQ_CALC_RATE and ONLY if those 
 			 * packets were transmitted faster than the receiver rate, use it for
@@ -295,6 +239,7 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 
 	if(rre->rev_rre_mode == TCP_REV_RRE_MODE_INIT) {
 		if(rre->rev_rre_state == TCP_REV_RRE_STATE_FORCE_DRAIN) {
+			// TODO: Decrease sending_rate ? 
 			TCP_RRE_SET_STATE(rre, TCP_REV_RRE_STATE_SACK);
 		} else {
 			rre->rev_sending_rate += (2 * tp->mss_cache); // Exp growth
@@ -376,7 +321,7 @@ static __inline__ void revsw_tcp_handle_fast_ack(struct tcp_sock *tp, struct rev
 /*
 1. handle tcp_time_stamp reset
 */
-static int revsw_tcp_leak_quota(struct sock *sk)
+static int tcp_rre_get_leak_quota(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_rre *rre = inet_csk_ca(sk);
@@ -389,7 +334,7 @@ static int revsw_tcp_leak_quota(struct sock *sk)
 
 		rre->rev_bytes_sent_this_leak 	= 0;
 		rre->rev_leak_start_ts 			= tcp_time_stamp;
-		rre->rev_init_cwnd 				= rre_revsw_cong_wnd;
+		rre->rev_init_cwnd 				= revsw_cong_wnd;
 		rre->rev_rre_mode 				= TCP_REV_RRE_MODE_INIT;
 		rre->rev_rre_ack_r2 				= tp->snd_una;
 		rre->rev_sending_rate 		 	= quota = rre->rev_init_cwnd * 1448;
@@ -432,220 +377,41 @@ static int revsw_tcp_leak_quota(struct sock *sk)
 
 /********************************************************************
  *
- * RevSw TCP Session Database
- *
- ********************************************************************/
-static spinlock_t tcpsi_hash_lock;
-static struct tcp_session_info_hash *tcpsi_hash;
-
-static int tcp_session_hash_init(void)
-{
-	__u64 i;
-
-	spin_lock_init(&tcpsi_hash_lock);
-
-	tcpsi_hash = kzalloc(TCP_SESSION_HASH_SIZE * sizeof(*tcpsi_hash),
-			     GFP_KERNEL);
-	if (!tcpsi_hash)
-		return -ENOMEM;
-
-	for (i = 0; i < TCP_SESSION_HASH_SIZE; i++) {
-		spin_lock_init(&tcpsi_hash[i].lock);
-		INIT_HLIST_HEAD(&tcpsi_hash[i].hlist);
-	}
-
-	return 0;
-}
-
-static void tcp_session_hash_cleanup(void)
-{
-	__u64 i;
-	struct tcp_session_info_hash *thash;
-	struct tcp_session_entry *session;
-	struct hlist_node *tmp;
-
-	for (i = 0; i < TCP_SESSION_HASH_SIZE; i++) {
-		thash = &tcpsi_hash[i];
-		if (hlist_empty(&thash->hlist))
-			continue;
-
-		spin_lock_bh(&thash->lock);
-
-		hlist_for_each_entry_safe(session, tmp, &thash->hlist, node) {
-			hlist_del(&session->node);
-			cancel_delayed_work_sync(&session->work);
-			kfree(session);
-		}
-
-		spin_unlock_bh(&thash->lock);
-	}
-
-	kfree(tcpsi_hash);
-}
-
-static void tcp_session_delete_work_handler(struct work_struct *work)
-{
-	struct tcp_session_entry *session = container_of(to_delayed_work(work),
-						struct tcp_session_entry,
-						work);
-	struct tcp_session_info_hash *thash;
-	__u32 hash;
-
-	if (hlist_unhashed(&session->node))
-		return;
-
-	hash = hash_32((session->addr & TCP_SESSION_KEY_BITMASK),
-			TCP_SESSION_HASH_BITS);
-
-	thash = &tcpsi_hash[hash];
-
-	spin_lock_bh(&thash->lock);
-	hlist_del(&session->node);
-	spin_unlock_bh(&thash->lock);
-	kfree(session);
-}
-
-static void tcp_session_add(struct tcp_sock *tp)
-{
-	struct sock *sk = (struct sock *)tp;
-	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force __u32)inet->inet_daddr;
-	__u16 port = (__force __u16)inet->inet_dport;
-	struct tcp_session_info_hash *thash;
-	struct tcp_session_entry *session;
-	__u32 hash;
-
-	session = kzalloc(sizeof(*session), GFP_KERNEL);
-	if (!session)
-		return;
-
-	session->addr = addr;
-	session->port = port;
-	session->info.latency = TCP_SESSION_DEFAULT_LATENCY;
-	session->info.bandwidth = TCP_SESSION_DEFAULT_BW;
-	INIT_DELAYED_WORK(&session->work, tcp_session_delete_work_handler);
-
-	hash = hash_32((addr & TCP_SESSION_KEY_BITMASK), TCP_SESSION_HASH_BITS);
-	thash = &tcpsi_hash[hash];
-
-	spin_lock_bh(&thash->lock);
-	hlist_add_head(&session->node, &thash->hlist);
-	spin_unlock_bh(&thash->lock);
-
-	tp->session_info = (void *)session;
-}
-
-static void tcp_session_add_work_handler(struct work_struct *work)
-{
-	struct tcp_sock *tp = container_of(to_delayed_work(work),
-					   struct tcp_sock,
-					   session_work);
-
-	tcp_session_add(tp);
-}
-
-static void tcp_session_start(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	INIT_DELAYED_WORK(&tp->session_work, tcp_session_add_work_handler);
-
-	mod_delayed_work(system_wq, &tp->session_work, 0);
-}
-
-static void tcp_session_delete(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_session_entry *session = tp->session_info;
-
-	if (!session)
-		return;
-
-	schedule_delayed_work(&session->work,
-			      msecs_to_jiffies(rre_revsw_tcp_session_ttl * 1000));
-}
-
-static int tcp_get_session_info(struct sock *sk, unsigned char *data, int *len)
-{
-	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force __u32)(inet->inet_daddr);
-	__u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
-			     TCP_SESSION_HASH_BITS);
-	struct tcp_session_info_hash *thash = &tcpsi_hash[hash];
-	struct tcp_session_entry *session;
-	struct tcp_session_info info;
-	struct hlist_node *tmp;
-
-	info.version = TCP_SESSION_INFO_VERSION;
-	info.cookie = 0;
-	info.latency = TCP_SESSION_DEFAULT_LATENCY;
-	info.bandwidth = TCP_SESSION_DEFAULT_BW;
-
-	if (hlist_empty(&thash->hlist))
-		return -1;
-
-	spin_lock_bh(&thash->lock);
-
-	hlist_for_each_entry_safe(session, tmp, &thash->hlist, node) {
-		if (session->addr == addr) {
-			if ((session->info.latency <= info.latency) &&
-				(session->info.bandwidth >= info.bandwidth)) {
-				info.latency = session->info.latency;
-				info.bandwidth = session->info.bandwidth;
-			}
-		}
-	}
-
-	spin_unlock_bh(&thash->lock);
-
-	*len = min(*len, sizeof(info));
-
-	memcpy(data, &info, *len);
-
-	return 0;
-}
-/********************************************************************
- * End RevSw TCP Session Database
- ********************************************************************/
-/********************************************************************
- *
  * RevSw Congestion Control Algorithm
  *
  ********************************************************************/
 /*
- * @tcp_revsw_init
+ * @tcp_rre_init
  */
-static void tcp_revsw_init(struct sock *sk)
+static void tcp_rre_init(struct sock *sk)
 {
-	//tcp_session_start(sk);
+	tcp_session_start(sk);
 }
 
 /*
- * @tcp_revsw_release
+ * @tcp_rre_release
  *
  * This function setups up the deletion of the session database entry used by
  * this connection.
  */
-static void tcp_revsw_release(struct sock *sk)
+static void tcp_rre_release(struct sock *sk)
 {
-	//tcp_session_delete(sk);
+	tcp_session_delete(sk);
 }
 
-static u32 tcp_revsw_ssthresh(struct sock *sk)
+// TODO: Check where this called from and if we can use this.
+
+static u32 tcp_rre_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
 	return (tp->snd_cwnd);
 }
 
-static void tcp_revsw_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
+// TODO: Check where this called from and if we can use this.
+static void tcp_rre_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	tcp_sk(sk)->snd_cwnd + 2;
-}
-
-static u32 tcp_revsw_min_cwnd(const struct sock *sk)
-{
-	return tcp_sk(sk)->snd_cwnd/2;
 }
 
 /*
@@ -653,7 +419,7 @@ static u32 tcp_revsw_min_cwnd(const struct sock *sk)
  * Called after processing group of packets.
  * but all revsw needs is the last sample of srtt.
  */
-static void tcp_revsw_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
+static void tcp_rre_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 {
 	struct revsw_rre *rre = inet_csk_ca(sk);
 
@@ -669,7 +435,7 @@ static void tcp_revsw_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 
 }
 
-static void tcp_revsw_state(struct sock *sk, u8 new_state)
+static void tcp_rre_state(struct sock *sk, u8 new_state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_rre *rre = inet_csk_ca(sk);
@@ -679,26 +445,10 @@ static void tcp_revsw_state(struct sock *sk, u8 new_state)
 		TCP_RRE_SET_STATE(rre, TCP_REV_RRE_STATE_FORCE_DRAIN);
 		rre->rre_sack_time_stamp = tcp_time_stamp;
 		rev_rre_drain_buffer(tp, rre);
-		
-		if ((tcp_time_stamp - tcp_sk(sk)->retrans_stamp) >
-		    (tcp_sk(sk)->srtt >> 3)) {
-			/*
-			 * There has not been any loss in last RTT,
-			 * cwnd need not be one.
-			 *
-			 * TODO: or call tcp_revsw_bw_rtt ?
-			 */
-			tcp_sk(sk)->snd_cwnd = max(tcp_sk(sk)->snd_ssthresh/2,
-						   2U);
-		} else {
-			/* Must be really bad. */
-			tcp_sk(sk)->snd_cwnd = 1;
-		}
 	}
-	
 }
 
-static void tcp_revsw_event(struct sock *sk, enum tcp_ca_event event)
+static void tcp_rre_event(struct sock *sk, enum tcp_ca_event event)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_rre *rre = inet_csk_ca(sk);
@@ -724,47 +474,23 @@ static void tcp_revsw_event(struct sock *sk, enum tcp_ca_event event)
 	}
 }
 
-/* Extract info for Tcp socket info provided via netlink. */
-static void tcp_revsw_info(struct sock *sk, u32 ext,
-			      struct sk_buff *skb)
-{
-	if (ext & (1 << (INET_DIAG_VEGASINFO - 1))) {
-		struct tcpvegas_info info = {
-			.tcpv_enabled = 1,
-			.tcpv_rtt = 0,
-			.tcpv_minrtt = 0,
-		};
-
-		nla_put(skb, INET_DIAG_VEGASINFO, sizeof(info), &info);
-	}
-}
-
-static void tcp_revsw_syn_post_config(struct sock *sk)
+static void tcp_rre_syn_post_config(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_rre *rre = inet_csk_ca(sk);
 
-	LOG_IT(REVSW_RRE_LOG_INFO, "I am in tcp_revsw_syn_post_config\n");
+	LOG_IT(REVSW_RRE_LOG_INFO, "I am in tcp_rre_syn_post_config\n");
 
 	tp->rev_rre_hs_tsval = tp->rev_rre_hs_tsval - tp->rx_opt.rcv_tsval;
 	rre->rev_rre_first_rtt = tcp_time_stamp - tp->rx_opt.rcv_tsecr;
 
+	// TODO: Use same function from both revsw and rre modules.
 	/*
 	 * Modify the congestion and send windows.  Also fix the
 	 * sndbuf size.  Will be changed to use sysctls when they
 	 * are available.
 	 */
-	tp->snd_wnd = rre_revsw_rcv_wnd;
-	tp->snd_cwnd = rre_revsw_cong_wnd;
 	sk->sk_sndbuf = 3 * tp->snd_wnd;
-}
-
-static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	if ((nwin > rre_revsw_cong_wnd) || (nwin == 0))
-		tp->snd_wnd = nwin;
 }
 
 static bool
@@ -776,20 +502,20 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 
 static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.flags		= TCP_CONG_RTT_STAMP,
-	.init		= tcp_revsw_init,
-	.release	= tcp_revsw_release,
-	.ssthresh	= tcp_revsw_ssthresh,
-	.cong_avoid	= tcp_revsw_cong_avoid,
-	.min_cwnd	= tcp_revsw_min_cwnd,
-	.set_state	= tcp_revsw_state,
-	.cwnd_event	= tcp_revsw_event,
-	.get_info	= NULL, //tcp_revsw_info,
-	.pkts_acked	= tcp_revsw_pkts_acked,
-	.syn_post_config = 		tcp_revsw_syn_post_config,
-	.set_nwin_size = 		tcp_revsw_set_nwin_size,
+	.init		= tcp_rre_init,
+	.release	= tcp_rre_release,
+	.ssthresh	= tcp_rre_ssthresh,
+	.cong_avoid	= tcp_rre_cong_avoid,
+	.min_cwnd	= NULL,
+	.set_state	= tcp_rre_state,
+	.cwnd_event	= tcp_rre_event,
+	.get_info	= NULL,
+	.pkts_acked	= tcp_rre_pkts_acked,
+	.syn_post_config = 		tcp_rre_syn_post_config,
+	.set_nwin_size = 		NULL,
 	.handle_nagle_test = 	tcp_revsw_handle_nagle_test,
 	.get_session_info = 	tcp_get_session_info,
-	.revsw_get_leak_quota = revsw_tcp_leak_quota,
+	.revsw_get_leak_quota = tcp_rre_get_leak_quota,
 
 	.owner		= THIS_MODULE,
 	.name		= "rre"
@@ -798,18 +524,12 @@ static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 static int __init tcp_revsw_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct revsw_rre) > ICSK_CA_PRIV_SIZE);
-
-	revsw_ctl_table_hdr = register_sysctl("rre", revsw_ctl_table);
-	if (!revsw_ctl_table_hdr)
-		return -EFAULT;
 	return tcp_register_congestion_control(&tcp_rre_cca);
 }
 
 static void __exit tcp_revsw_unregister(void)
 {
 	tcp_unregister_congestion_control(&tcp_rre_cca);
-	unregister_sysctl_table(revsw_ctl_table_hdr);
-	//tcp_session_hash_cleanup();
 }
 
 module_init(tcp_revsw_register);
