@@ -185,12 +185,12 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 		rre->rev_rre_ack_r1 	= ack;
 		rre->rev_rre_RDmin 		= (int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
 		rre->rev_rre_ts_r2 		= tp->rx_opt.rcv_tsecr;
-		LOG_IT(REVSW_RRE_LOG_INFO, "rtt: %u, HS tsval %u\n", 
-				rre->rev_rre_first_rtt, tp->rev_rre_hs_tsval);
+		// LOG_IT(REVSW_RRE_LOG_INFO, "rtt: %u, HS tsval %u\n", 
+			//	rre->rev_rre_first_rtt, tp->rre_first_hs_tsval);
 	} else if (ack >= 
 		rre->rev_rre_ack_r2 + (tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE)) {
 
-		// TODO: Do we ewant to check if sending_rate <<< receiving_rate ?  
+		// TODO: Do we want to check if sending_rate <<< receiving_rate ?  
 		// TODO: Ex: Sending_rate + ((tp->srtt >> 3)/2) < receiving_rate
 
 		/* if (sending_rate < receiving rate) */
@@ -481,8 +481,8 @@ static void tcp_rre_syn_post_config(struct sock *sk)
 
 	LOG_IT(REVSW_RRE_LOG_INFO, "I am in tcp_rre_syn_post_config\n");
 
-	tp->rev_rre_hs_tsval = tp->rev_rre_hs_tsval - tp->rx_opt.rcv_tsval;
-	rre->rev_rre_first_rtt = tcp_time_stamp - tp->rx_opt.rcv_tsecr;
+	// tp->rre_first_hs_tsval = tp->rre_first_hs_tsval - tp->rx_opt.rcv_tsval;
+	// rre->rev_rre_first_rtt = tcp_time_stamp - tp->rx_opt.rcv_tsecr;
 
 	// TODO: Use same function from both revsw and rre modules.
 	/*
