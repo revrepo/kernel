@@ -48,7 +48,7 @@ typedef enum revsw_rre_loglevel_ {
 	}
 
 #define TCP_RRE_SET_STATE(rre, state)  { \
-	LOG_IT(REVSW_RRE_LOG_INFO, "Setting State from %u to %u\n", rre->rev_rre_state, state);	\
+	LOG_IT(REVSW_RRE_LOG_VERBOSE, "Setting State from %u to %u\n", rre->rev_rre_state, state);	\
 	rre->rev_rre_state = state;	\
 }
 
@@ -71,15 +71,15 @@ static u32 rev_rre_receive_rate(struct tcp_sock *tp, struct revsw_rre *rre, u32 
 		return 0;
 	}
 	r_rate = (unsigned long) ((1000*acked_data)/time_in_milisecs); // bytes/sec
-	ewma_add(&tp->rev_rre_receiving_rate, r_rate);
+	ewma_add(&rre->rev_rre_receiving_rate, r_rate);
 
 	LOG_IT(REVSW_RRE_LOG_VERBOSE, "ackd_bytes %u in %u msecs. ack %u. r_rate %lu, r_ewma %lu. snd_r = %u\n",
 				acked_data, time_in_milisecs, ack, r_rate,
-				ewma_read(&tp->rev_rre_receiving_rate), rre->rev_sending_rate);
+				ewma_read(&rre->rev_rre_receiving_rate), rre->rev_sending_rate);
 
 	LOG_IT(REVSW_RRE_LOG_VERBOSE, "ack %u ; r_rate %lu, avg %lu. snd_r = %u\n",
 				ack, r_rate,
-				ewma_read(&tp->rev_rre_receiving_rate), rre->rev_sending_rate);
+				ewma_read(&rre->rev_rre_receiving_rate), rre->rev_sending_rate);
 
 	return (u32) r_rate;
 
@@ -93,7 +93,7 @@ static __inline__ void rev_rre_fill_buffer(struct tcp_sock *tp, struct revsw_rre
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate = ((1000 *(rre->rev_rre_Bmax - rre->rev_rre_t)) / srtt_msecs);
-	rre->rev_sending_rate = (u32) ewma_read(&tp->rev_rre_receiving_rate) + delta_sending_rate;
+	rre->rev_sending_rate = (u32) ewma_read(&rre->rev_rre_receiving_rate) + delta_sending_rate;
 	rre->rev_rre_state = TCP_REV_RRE_STATE_FILL;
 
 	LOG_IT(REVSW_RRE_LOG_VERBOSE, "delta_sending_rate %u and sending_rate = %u\n",
@@ -109,7 +109,7 @@ static __inline__ void rev_rre_drain_buffer(struct tcp_sock *tp, struct revsw_rr
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate = (1000 * (rre->rev_rre_t - rre->rev_rre_Bmin) / srtt_msecs);
-	rre->rev_sending_rate = (u32) ewma_read(&tp->rev_rre_receiving_rate) - delta_sending_rate;
+	rre->rev_sending_rate = (u32) ewma_read(&rre->rev_rre_receiving_rate) - delta_sending_rate;
 	if(rre->rev_rre_state == TCP_REV_RRE_STATE_FORCE_DRAIN) {
 		TCP_RRE_SET_STATE(rre, TCP_REV_RRE_STATE_SACK);
 	}
@@ -141,9 +141,9 @@ static void rev_rre_process_mode_bm(struct tcp_sock *tp, struct revsw_rre *rre, 
 
 	// TODO: We may not need these asserts
 	ASSERTMSG(tbuff >=0, "tbuff can not be < 0");
-	ASSERTMSG(ewma_read(&tp->rev_rre_receiving_rate) > 0,"Divide by zero check");
+	ASSERTMSG(ewma_read(&rre->rev_rre_receiving_rate) > 0,"Divide by zero check");
 	
-	network_buffer_capacity = ((rre->rev_rre_t * 1000 )/ (u32) ewma_read(&tp->rev_rre_receiving_rate));
+	network_buffer_capacity = ((rre->rev_rre_t * 1000 )/ (u32) ewma_read(&rre->rev_rre_receiving_rate));
 
 	if(rre->rev_rre_state == TCP_REV_RRE_STATE_FORCE_DRAIN) {
 		rev_rre_drain_buffer(tp, rre);
@@ -221,7 +221,7 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 
 			rev_rre_receive_rate(tp, rre, ack);
 
-			rre->rev_rre_t = (((u32) ewma_read(&tp->rev_rre_receiving_rate)) * rre->rev_rtt_min) / 1000;
+			rre->rev_rre_t = (((u32) ewma_read(&rre->rev_rre_receiving_rate)) * rre->rev_rtt_min) / 1000;
 			rre->rev_rre_Bmax = rre->rev_rre_t + (rre->rev_rre_t >> 1); // t + t/2
 			rre->rev_rre_Bmin = rre->rev_rre_t - (rre->rev_rre_t >> 1); // t - t/2
 			
@@ -232,7 +232,7 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 					rre->rev_rre_RDmin);
 
 			
-			rre->rev_sending_rate = (u32) ewma_read(&tp->rev_rre_receiving_rate);
+			rre->rev_sending_rate = (u32) ewma_read(&rre->rev_rre_receiving_rate);
 			rre->rev_rre_mode = TCP_REV_RRE_MODE_BM;
 		}
 	}
@@ -338,7 +338,7 @@ static int tcp_rre_get_leak_quota(struct sock *sk)
 		rre->rev_rre_mode 				= TCP_REV_RRE_MODE_INIT;
 		rre->rev_rre_ack_r2 				= tp->snd_una;
 		rre->rev_sending_rate 		 	= quota = rre->rev_init_cwnd * 1448;
-		ewma_init(&tp->rev_rre_receiving_rate, 1024, 2);
+		ewma_init(&rre->rev_rre_receiving_rate, 1024, 2);
 
 		LOG_IT(REVSW_RRE_LOG_INFO, "Very first packet (snd_una: %u)\n", tp->snd_una);
 	} else {
@@ -515,7 +515,7 @@ static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.set_nwin_size = 		NULL,
 	.handle_nagle_test = 	tcp_revsw_handle_nagle_test,
 	.get_session_info = 	tcp_get_session_info,
-	.revsw_get_leak_quota = tcp_rre_get_leak_quota,
+	.get_leak_quota = tcp_rre_get_leak_quota,
 
 	.owner		= THIS_MODULE,
 	.name		= "rre"

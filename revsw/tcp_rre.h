@@ -10,6 +10,8 @@
 #ifndef __TCP_REVSW_RRE_H__
 #define __TCP_REVSW_RRE_H__
 
+#include <linux/average.h>
+
 /********************************************************************
  *
  * RevSw TCP RRE Modes
@@ -61,7 +63,8 @@ struct revsw_rre {
 	u32 rev_init_cwnd;
 	u32 rev_last_sacked_out;
 	u32 rre_sack_time_stamp;
-	u32	rev_rre_first_rtt;
+	struct ewma rev_rre_receiving_rate;
+	u32 rev_rre_first_rtt;
 
 	// 17
 	u8 rev_rre_mode;
