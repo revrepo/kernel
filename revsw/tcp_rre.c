@@ -18,18 +18,12 @@
 #include "tcp_rre.h"
 #include "tcp_revsw_session_db.h"
 
-
-#include <linux/kernel.h>
-
 /********************************************************************
  *
  * RevSw TCP RRE
  *
  ********************************************************************/
 
-#define ASSERTMSG(expr,string)  if (!(expr)) {\
-							           printk ("Assertion failed: \n" string );\
-				                 while (1);}
 typedef enum revsw_rre_loglevel_ {
 	REVSW_RRE_LOG_NOLOG = REVSW_RRE_LOG_DEFAULT,
 	REVSW_RRE_LOG_ERR,
@@ -139,9 +133,8 @@ static void rev_rre_process_mode_bm(struct tcp_sock *tp, struct revsw_rre *rre, 
 	tbuff = RD - rre->rev_rre_RDmin;
 	rev_rre_receive_rate(tp, rre, ack);
 
-	// TODO: We may not need these asserts
-	ASSERTMSG(tbuff >=0, "tbuff can not be < 0");
-	ASSERTMSG(ewma_read(&rre->rev_rre_receiving_rate) > 0,"Divide by zero check");
+	// TODO: We may not need BUG_ON after RRE implementation is complete
+	BUG_ON(tbuff < 0);
 	
 	network_buffer_capacity = ((rre->rev_rre_t * 1000 )/ (u32) ewma_read(&rre->rev_rre_receiving_rate));
 
