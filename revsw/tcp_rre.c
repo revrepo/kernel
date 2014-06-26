@@ -1,10 +1,8 @@
 /*
  *
- *   RevSw TCP Congestion Control Algorithm
+ *   RevSw RRE TCP Congestion Control Algorithm
  *
- * Starting off RevSw will be utilizing the Westwood CCA with
- * some minor tweaks to get better throughput and congestion
- * control.
+ * This is TCP RRE (Receiver Rate Estimation) Implementation.
  *
  */
 #include <linux/mm.h>
@@ -17,20 +15,6 @@
 #include "tcp_revsw_sysctl.h"
 #include "tcp_rre.h"
 #include "tcp_revsw_session_db.h"
-
-/********************************************************************
- *
- * RevSw TCP RRE
- *
- ********************************************************************/
-
-typedef enum revsw_rre_loglevel_ {
-	REVSW_RRE_LOG_NOLOG = REVSW_RRE_LOG_DEFAULT,
-	REVSW_RRE_LOG_ERR,
-	REVSW_RRE_LOG_INFO,
-	REVSW_RRE_LOG_SACK,
-	REVSW_RRE_LOG_VERBOSE,
-} revsw_rre_loglevel;
 
 #define LOG_IT(loglevel, format, ...) \
 	if(revsw_tcp_rre_loglevel && revsw_tcp_rre_loglevel >= loglevel)  { \
@@ -46,7 +30,15 @@ typedef enum revsw_rre_loglevel_ {
 	rre->rev_rre_state = state;	\
 }
 
-// TODO: Temp Assumptuion: receiver tick is same as sender tick
+/*
+ * @rev_rre_receive_rate
+ *
+ * Calculate the rate at which reciver is receving data. Our sending rate is calculated based
+ * on this value.
+ *
+ * TODO: Use client TCP timestamp's estimated value.
+ * (Current Assumptuion: receiver tick is same as sender tick.)
+ */
 static u32 rev_rre_receive_rate(struct tcp_sock *tp, struct revsw_rre *rre, u32 ack)
 {
 	unsigned long r_rate;
@@ -79,11 +71,14 @@ static u32 rev_rre_receive_rate(struct tcp_sock *tp, struct revsw_rre *rre, u32 
 
 }
 
+/*
+ * @rev_rre_fill_buffer
+ *
+ * Set Sending rate = more than buffer drain rate which will fill network buffer.
+ */
 static __inline__ void rev_rre_fill_buffer(struct tcp_sock *tp, struct revsw_rre *rre)
 {
-	u32 srtt_msecs;
-	// temp variable
-	u32 delta_sending_rate = 0;
+	u32 srtt_msecs, delta_sending_rate;
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate = ((1000 *(rre->rev_rre_Bmax - rre->rev_rre_t)) / srtt_msecs);
@@ -95,11 +90,14 @@ static __inline__ void rev_rre_fill_buffer(struct tcp_sock *tp, struct revsw_rre
 	return;
 }
 
+/*
+ * @rev_rre_drain_buffer
+ *
+ * Set Sending rate = lesser than buffer drain rate which will force draining of network buffer.
+ */
 static __inline__ void rev_rre_drain_buffer(struct tcp_sock *tp, struct revsw_rre *rre)
 {
-	u32 srtt_msecs;
-	// temp variable
-	u32 delta_sending_rate = 0;
+	u32 srtt_msecs, delta_sending_rate;
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate = (1000 * (rre->rev_rre_t - rre->rev_rre_Bmin) / srtt_msecs);
@@ -116,12 +114,15 @@ static __inline__ void rev_rre_drain_buffer(struct tcp_sock *tp, struct revsw_rr
 	return;
 }
 
+/*
+ * @rev_rre_process_mode_bm
+ *
+ * This fucntion is called whne TCP-RRE is in BM (Buffer Management) MODE and 
+ * when we recive an ack/sack.
+ */
 static void rev_rre_process_mode_bm(struct tcp_sock *tp, struct revsw_rre *rre, u32 ack)
 {
-	int tbuff, RD;
-
-	// temp variables
-	int network_buffer_capacity = 0;
+	int tbuff, RD, network_buffer_capacity;
 	u32 acks_since_last_copy;
 
 	RD = tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr;
@@ -151,7 +152,7 @@ static void rev_rre_process_mode_bm(struct tcp_sock *tp, struct revsw_rre *rre, 
 	// TODO: If possible use local timestamp for this.
 	// TODO: Include SACKs in this calculation
 
-	acks_since_last_copy = (rre->rev_rre_ack_r2 + tp->mss_cache * 30);
+	acks_since_last_copy = (rre->rev_rre_ack_r2 + tp->mss_cache * TCP_RRE_TBUFF_PACKETS);
 	if ((ack > acks_since_last_copy)) {
 		rre->rev_rre_ts_r1 	= rre->rev_rre_ts_r2;
 		rre->rev_rre_ack_r1 = rre->rev_rre_ack_r2;		
@@ -166,9 +167,12 @@ static void rev_rre_process_mode_bm(struct tcp_sock *tp, struct revsw_rre *rre, 
 
 }
 
-#define TCP_RRE_PACKETS_REQ_CALC_RATE	30
-
-static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rre, u32 ack)
+/*
+ * @rev_rre_process_mode_init
+ *
+ * This fucntion is called whne TCP-RRE is in INIT MODE and when we recive an ack/sack.
+ */
+ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rre, u32 ack)
 {
 	int enter_BM_mode;
 
@@ -178,12 +182,10 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 		rre->rev_rre_ack_r1 	= ack;
 		rre->rev_rre_RDmin 		= (int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
 		rre->rev_rre_ts_r2 		= tp->rx_opt.rcv_tsecr;
-		// LOG_IT(REVSW_RRE_LOG_INFO, "rtt: %u, HS tsval %u\n", 
-			//	rre->rev_rre_first_rtt, tp->rre_first_hs_tsval);
 	} else if (ack >= 
 		rre->rev_rre_ack_r2 + (tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE)) {
 
-		// TODO: Do we want to check if sending_rate <<< receiving_rate ?  
+		// TODO: Do we want to check if sending_rate MUCH LESSER than receiving_rate ?  
 		// TODO: Ex: Sending_rate + ((tp->srtt >> 3)/2) < receiving_rate
 
 		/* if (sending_rate < receiving rate) */
@@ -215,8 +217,8 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 			rev_rre_receive_rate(tp, rre, ack);
 
 			rre->rev_rre_t = (((u32) ewma_read(&rre->rev_rre_receiving_rate)) * rre->rev_rtt_min) / 1000;
-			rre->rev_rre_Bmax = rre->rev_rre_t + (rre->rev_rre_t >> 1); // t + t/2
-			rre->rev_rre_Bmin = rre->rev_rre_t - (rre->rev_rre_t >> 1); // t - t/2
+			rre->rev_rre_Bmax = rre->rev_rre_t + (rre->rev_rre_t >> 1); /* t + t/2 */
+			rre->rev_rre_Bmin = rre->rev_rre_t - (rre->rev_rre_t >> 1); /* t - t/2 */
 			
 			LOG_IT(REVSW_RRE_LOG_INFO, "T %u, Bmax %u, Bmin %u, RDmin %d\n",
 					rre->rev_rre_t, 
@@ -235,7 +237,7 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 			// TODO: Decrease sending_rate ? 
 			TCP_RRE_SET_STATE(rre, TCP_REV_RRE_STATE_SACK);
 		} else {
-			rre->rev_sending_rate += (2 * tp->mss_cache); // Exp growth
+			rre->rev_sending_rate += (2 * tp->mss_cache); /* Exponential growth */
 			LOG_IT(REVSW_RRE_LOG_VERBOSE, "Mode: INIT. Exp Growth. Sending Rate: %u\n",
 					rre->rev_sending_rate);
 		}
@@ -250,6 +252,11 @@ static void rev_rre_process_mode_init (struct tcp_sock *tp, struct revsw_rre *rr
 	return;
 }
 
+/*
+ * @revsw_tcp_handle_common_ack
+ *
+ * This fucntion is common for both fast and slow ack
+ */
 static __inline__ void revsw_tcp_handle_common_ack(struct tcp_sock *tp, struct revsw_rre *rre)
 {
 	if(rre->rev_rre_state == TCP_REV_RRE_STATE_SACK && 
@@ -275,6 +282,11 @@ static __inline__ void revsw_tcp_handle_common_ack(struct tcp_sock *tp, struct r
 	}
 }
 
+/*
+ * @revsw_tcp_handle_slow_ack
+ *
+ * Hanlde slow ack.
+ */
 static __inline__ void revsw_tcp_handle_slow_ack(struct tcp_sock *tp, struct revsw_rre *rre)
 {
 	if(tp->sacked_out != rre->rev_last_sacked_out) {
@@ -297,6 +309,11 @@ static __inline__ void revsw_tcp_handle_slow_ack(struct tcp_sock *tp, struct rev
 	revsw_tcp_handle_common_ack(tp, rre);
 }
 
+/*
+ * @revsw_tcp_handle_fast_ack
+ *
+ * Hanlde fast ack.
+ */
 static __inline__ void revsw_tcp_handle_fast_ack(struct tcp_sock *tp, struct revsw_rre *rre)
 {
 	if(tp->sacked_out && (tp->sacked_out != rre->rev_last_sacked_out))
@@ -310,10 +327,15 @@ static __inline__ void revsw_tcp_handle_fast_ack(struct tcp_sock *tp, struct rev
 	revsw_tcp_handle_common_ack(tp, rre);
 }
 
-// TODO:
 /*
-1. handle tcp_time_stamp reset
-*/
+ * @tcp_rre_get_leak_quota
+ *
+ * This function is called before sending any packet out on wire. Here we determine the number
+ * of packets that can be sent out in this leak. A leak is number of packets per second which is
+ * = sending_rate. 
+ *
+ * TODO: handle tcp_time_stamp reset
+ */
 static int tcp_rre_get_leak_quota(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -363,18 +385,15 @@ static int tcp_rre_get_leak_quota(struct sock *sk)
 	 * no significance when TCP-RRE is used as CCA. The 2 conditions which we have
 	 * to meet pacify the stack are (1) it shouldn't be zero (2) It > packets_in_flight.
 	 */
-	tp->snd_cwnd 			= max(tp->snd_cwnd, tcp_packets_in_flight(tp)+1);
+	tp->snd_cwnd = max(tp->snd_cwnd, tcp_packets_in_flight(tp)+1);
 		
 	return (int) (quota/tp->mss_cache);
 }
 
-/********************************************************************
- *
- * RevSw Congestion Control Algorithm
- *
- ********************************************************************/
 /*
  * @tcp_rre_init
+ *
+ * Starts session DB for this connection.
  */
 static void tcp_rre_init(struct sock *sk)
 {
@@ -392,8 +411,13 @@ static void tcp_rre_release(struct sock *sk)
 	tcp_session_delete(sk);
 }
 
-// TODO: Check where this called from and if we can use this.
-
+/*
+ * @tcp_rre_ssthresh
+ *
+ * This is a mandatory callback function. Currently not used by RRE.
+ * TODO: Check where this fucntion si called from and if we can use this for RRE.
+ * TODO: Also check if returning a different value makes any difference to RRE
+ */
 static u32 tcp_rre_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
@@ -401,16 +425,23 @@ static u32 tcp_rre_ssthresh(struct sock *sk)
 	return (tp->snd_cwnd);
 }
 
-// TODO: Check where this called from and if we can use this.
+/*
+ * @tcp_rre_cong_avoid
+ *
+ * This is a mandatory callback function. Currently not used by RRE.
+ * TODO: Check where this fucntion si called from and if we can use this for RRE.
+ * TODO: Also check if returning a different value makes any difference to RRE
+ */
 static void tcp_rre_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	tcp_sk(sk)->snd_cwnd + 2;
 }
 
 /*
- * @revsw_pkts_acked
+ * @tcp_rre_pkts_acked
+ *
  * Called after processing group of packets.
- * but all revsw needs is the last sample of srtt.
+ * but all RRE needs is the minimum RTT.
  */
 static void tcp_rre_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 {
@@ -428,6 +459,11 @@ static void tcp_rre_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 
 }
 
+/*
+ * @tcp_rre_state
+ *
+ * Handling RTO in this function.
+ */
 static void tcp_rre_state(struct sock *sk, u8 new_state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -441,6 +477,12 @@ static void tcp_rre_state(struct sock *sk, u8 new_state)
 	}
 }
 
+/*
+ * @tcp_rre_event
+ *
+ * Fast acks and Slow acks used to calculate receiving rate and adjust sending rate. SACK is
+ * also handled (with respect to RRE) in this function.
+ */
 static void tcp_rre_event(struct sock *sk, enum tcp_ca_event event)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -455,18 +497,18 @@ static void tcp_rre_event(struct sock *sk, enum tcp_ca_event event)
 		revsw_tcp_handle_slow_ack(tp, rre);
 		break;
 
-	case CA_EVENT_COMPLETE_CWR:
-		break;
-
-	case CA_EVENT_LOSS:
-		break;
-
 	default:
 		/* don't care */
 		break;
 	}
 }
 
+/*
+ * @tcp_rre_syn_post_config
+ *
+ * Use this fucntion to calculate first RTT which inturn is used to estimate client's TCP timestamp.
+ * (To be implemented)
+ */
 static void tcp_rre_syn_post_config(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -514,19 +556,19 @@ static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.name		= "rre"
 };
 
-static int __init tcp_revsw_register(void)
+static int __init tcp_rre_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct revsw_rre) > ICSK_CA_PRIV_SIZE);
 	return tcp_register_congestion_control(&tcp_rre_cca);
 }
 
-static void __exit tcp_revsw_unregister(void)
+static void __exit tcp_rre_unregister(void)
 {
 	tcp_unregister_congestion_control(&tcp_rre_cca);
 }
 
-module_init(tcp_revsw_register);
-module_exit(tcp_revsw_unregister);
+module_init(tcp_rre_register);
+module_exit(tcp_rre_unregister);
 
 MODULE_AUTHOR("Akhil Shashidhar");
 MODULE_LICENSE("GPL");
