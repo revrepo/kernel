@@ -800,6 +800,7 @@ struct tcp_congestion_ops {
 				  unsigned int mss_now, int nonagle);
 	/* Session Info handler */
 	int (*get_session_info)(struct sock *sk, unsigned char *sinfo, int *len);
+	int (*get_leak_quota)(struct sock *sk);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;

@@ -1846,16 +1846,21 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (unlikely(tp->repair) && tp->repair_queue == TCP_SEND_QUEUE)
 			goto repair; /* Skip network transmission */
 
-		cwnd_quota = tcp_cwnd_test(tp, skb);
+		if (inet_csk(sk)->icsk_ca_ops->get_leak_quota)
+			cwnd_quota = inet_csk(sk)->icsk_ca_ops->get_leak_quota(sk);
+		else
+			cwnd_quota = tcp_cwnd_test(tp, skb);
+	
 		if (!cwnd_quota) {
 			if (push_one == 2)
-				/* Force out a loss probe pkt. */
+			/* Force out a loss probe pkt. */
 				cwnd_quota = 1;
 			else
 				break;
 		}
-
-		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
+		
+		if (inet_csk(sk)->icsk_ca_ops->get_leak_quota == NULL && 
+					unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
 			break;
 
 		if (tso_segs == 1) {
