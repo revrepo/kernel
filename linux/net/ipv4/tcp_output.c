@@ -1850,10 +1850,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			cwnd_quota = icsk->icsk_ca_ops->get_cwnd_quota(sk, skb);
 		else
 			cwnd_quota = tcp_cwnd_test(tp, skb);
-	
+
 		if (!cwnd_quota) {
 			if (push_one == 2)
-			/* Force out a loss probe pkt. */
+				/* Force out a loss probe pkt. */
 				cwnd_quota = 1;
 			else
 				break;
