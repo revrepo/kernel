@@ -125,9 +125,9 @@ struct inet_connection_sock {
 		/* Information on the current probe. */
 		int		  probe_size;
 	} icsk_mtup;
-	u32			  icsk_ca_priv[24];
+	u32			  icsk_ca_priv[32];
 	u32			  icsk_user_timeout;
-#define ICSK_CA_PRIV_SIZE	(24 * sizeof(u32))
+#define ICSK_CA_PRIV_SIZE	(32 * sizeof(u32))
 };
 
 #define ICSK_TIME_RETRANS	1	/* Retransmit timer */

@@ -41,7 +41,8 @@
 #define TCP_RRE_MODE_INVALID  0
 #define TCP_RRE_MODE_INIT  (TCP_RRE_MODE_INVALID + 1)
 #define TCP_RRE_MODE_BM  (TCP_RRE_MODE_INVALID + 2)
-#define TCP_RRE_MODE_MONITOR  (TCP_RRE_MODE_INVALID + 3)
+#define TCP_RRE_MODE_PRE_MONITOR  (TCP_RRE_MODE_INVALID + 3)
+#define TCP_RRE_MODE_MONITOR  (TCP_RRE_MODE_INVALID + 4)
 
 #define TCP_RRE_STATE_INVALID  0
 #define TCP_RRE_STATE_FILL  (TCP_RRE_STATE_INVALID + 1)
@@ -74,8 +75,10 @@ struct revsw_rre {
 	u32 rre_init_cwnd;
 	u32 rre_last_sacked_out;
 	u32 rre_sack_time_stamp;
-	struct ewma rev_rre_receiving_rate;
+	struct ewma rre_receiving_rate;
 	u32 rre_first_rtt;
+
+	u32 rre_drain_start_ts;
 
 	u8 rre_mode;
 	u8 rre_state;
@@ -113,6 +116,7 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 {
 	unsigned long r_rate;
 	u32 acked_data, ticks_delta, time_in_milisecs, sacked_bytes = 0;
+	u32 acks_since_last_copy;
 
 	if (tp->sacked_out > rre->rre_last_sacked_out) {
 		sacked_bytes = (tp->sacked_out - rre->rre_last_sacked_out)
@@ -130,18 +134,36 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 	}
 	/* r_rate is in bytes/sec */
 	r_rate = (unsigned long) ((1000*acked_data)/time_in_milisecs);
-	ewma_add(&rre->rev_rre_receiving_rate, r_rate);
+	ewma_add(&rre->rre_receiving_rate, r_rate);
+
+	/*
+	 * TODO: for "pass-time", note we are using ticks from client.
+	 * Make sure we know the tick granularity accurately.
+	 * TODO: If possible use local timestamp for this.
+	 */
+
+	acks_since_last_copy =
+		(rre->rre_ack_r2 + tp->mss_cache * TCP_RRE_TBUFF_PACKETS);
+	if ((ack + sacked_bytes > acks_since_last_copy)) {
+		rre->rre_ts_r1	= rre->rre_ts_r2;
+		rre->rre_ack_r1	= rre->rre_ack_r2;
+		rre->rre_ts_r2	= tp->rx_opt.rcv_tsval;
+		rre->rre_ack_r2	= ack;
+		LOG_IT(TCP_RRE_LOG_INFO, "r1 r2, sr %u and %u / %u\n",
+			rre->rre_sending_rate, ack,
+			acks_since_last_copy);
+	}
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
 	"ackd_bytes %u in %u ms. ack %u. r_rate %lu, r_ewma %lu.snd_r = %u\n",
 			acked_data, time_in_milisecs, ack, r_rate,
-			ewma_read(&rre->rev_rre_receiving_rate),
+			ewma_read(&rre->rre_receiving_rate),
 			rre->rre_sending_rate);
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
 	"ack %u ; r_rate %lu, avg %lu. snd_r = %u\n",
 			ack, r_rate,
-			ewma_read(&rre->rev_rre_receiving_rate),
+			ewma_read(&rre->rre_receiving_rate),
 			rre->rre_sending_rate);
 
 	return (u32) r_rate;
@@ -161,9 +183,10 @@ static inline void tcp_rre_fill_buffer(struct tcp_sock *tp,
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate =
 		((1000 * (rre->rre_Bmax - rre->rre_T)) / srtt_msecs);
-	rre->rre_sending_rate = (u32) ewma_read(&rre->rev_rre_receiving_rate);
+	rre->rre_sending_rate = (u32) ewma_read(&rre->rre_receiving_rate);
 	rre->rre_sending_rate += delta_sending_rate;
 	rre->rre_state = TCP_RRE_STATE_FILL;
+	rre->rre_drain_start_ts = 0;
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
 				"delta_sending_rate %u and sending_rate = %u\n",
@@ -184,7 +207,7 @@ static inline void tcp_rre_drain_buffer(struct tcp_sock *tp,
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate =
 		(1000 * (rre->rre_T - rre->rre_Bmin) / srtt_msecs);
-	rre->rre_sending_rate =	(u32) ewma_read(&rre->rev_rre_receiving_rate);
+	rre->rre_sending_rate =	(u32) ewma_read(&rre->rre_receiving_rate);
 	rre->rre_sending_rate -= delta_sending_rate;
 	if (rre->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
 		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK);
@@ -192,6 +215,9 @@ static inline void tcp_rre_drain_buffer(struct tcp_sock *tp,
 		/* Set state to TCP_RRE_STATE_DRAIN */
 		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_DRAIN);
 	}
+
+	if (rre->rre_drain_start_ts == 0)
+		rre->rre_drain_start_ts = tcp_time_stamp;
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
 			"delta_sending_rate %u and sending_rate = %u\n",
@@ -210,56 +236,126 @@ static void tcp_rre_process_mode_bm(struct tcp_sock *tp,
 			u32 ack)
 {
 	int tbuff, RD, network_buffer_capacity;
-	u32 acks_since_last_copy;
+
+	tcp_rre_receive_rate(tp, rre, ack);
 
 	RD = tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr;
-
 	if (RD < rre->rre_RDmin)
 		rre->rre_RDmin = RD;
-
 	tbuff = RD - rre->rre_RDmin;
-	tcp_rre_receive_rate(tp, rre, ack);
 
 	/* TODO: We may not need BUG_ON after RRE implementation is complete */
 	BUG_ON(tbuff < 0);
 
-	network_buffer_capacity =
-	((rre->rre_T * 1000) / (u32) ewma_read(&rre->rev_rre_receiving_rate));
-
 	if (rre->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
 		tcp_rre_drain_buffer(tp, rre);
 	} else if (rre->rre_state != TCP_RRE_STATE_SACK) {
+		network_buffer_capacity = ((rre->rre_T * 1000) /
+				(u32) ewma_read(&rre->rre_receiving_rate));
+
 		if (jiffies_to_msecs(tbuff) < network_buffer_capacity)
 			tcp_rre_fill_buffer(tp, rre);
 		else
 			tcp_rre_drain_buffer(tp, rre);
-	}
 
-	/* TODO: for "pass-time", note we are using ticks from client.
-	 * Make sure we know the tick granularity accurately.
-	 * TODO: If possible use local timestamp for this.
-	 * TODO: Include SACKs in this calculation.
-	 */
-
-	acks_since_last_copy =
-		(rre->rre_ack_r2 + tp->mss_cache * TCP_RRE_TBUFF_PACKETS);
-	if ((ack > acks_since_last_copy)) {
-		rre->rre_ts_r1	= rre->rre_ts_r2;
-		rre->rre_ack_r1	= rre->rre_ack_r2;
-		rre->rre_ts_r2	= tp->rx_opt.rcv_tsval;
-		rre->rre_ack_r2	= ack;
-		LOG_IT(TCP_RRE_LOG_INFO, "r1 r2, sr %u and %u / %u\n",
-			rre->rre_sending_rate, ack,
-			acks_since_last_copy);
-	}
-
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+		LOG_IT(TCP_RRE_LOG_VERBOSE,
 		"(BM) tbuff = %d, network_buffer_capacity = %d, rtt-min %u.\n",
 			jiffies_to_msecs(tbuff),
 			network_buffer_capacity,
 			rre->rre_rtt_min);
+	}
+
 }
 
+/*
+ * @tcp_rre_enter_monitor_mode
+ *
+ * Enter Monitor Mode
+ * TODO: handle tcp_time_stamp reset
+ */
+static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
+							struct revsw_rre *rre)
+{
+	if (tp->sacked_out || tp->lost_out) {
+		if (rre->rre_mode != TCP_RRE_MODE_PRE_MONITOR) {
+			rre->rre_mode = TCP_RRE_MODE_PRE_MONITOR;
+			rre->rre_sending_rate =
+					max_t(u32, rre->rre_sending_rate/2, 10);
+		}
+		/* Wait until we get ack for all SACKED and LOST packets */
+		return;
+	}
+
+	if (rre->rre_mode == TCP_RRE_MODE_PRE_MONITOR) {
+		/*
+		 * The sending rate is already reduced in PRE_MONITOR mode.
+		 * Now that we do not have any oustanding RTO/SACK
+		 * packets, reset sending_rate.
+		 */
+		rre->rre_sending_rate =
+			max_t(u32, rre->rre_sending_rate, revsw_cong_wnd);
+	} else {
+		/*
+		 * Recuce sending rate so that we drain network buffers.
+		 */
+		rre->rre_sending_rate =
+			max_t(u32, rre->rre_sending_rate/2, revsw_cong_wnd);
+	}
+
+	/*
+	 * TODO: Do we want to wait for (say) 1 RTT before we
+	 * record these values. The reason is that if we send at
+	 * a lower rate for one RTT, the buffer will drain and we
+	 * get a more accurate RDmin.
+	 */
+	/* Reset some variables */
+	rre->rre_ack_r1 = rre->rre_ts_r1 = 0;
+	rre->rre_ack_r2 = rre->rre_ts_r2 = 0;
+	rre->rre_T = rre->rre_Bmax = rre->rre_Bmin = 0;
+	rre->rre_RDmin = rre->rre_rtt_min = 0;
+
+	rre->rre_ack_r2	= tp->snd_una;
+	rre->rre_mode	= TCP_RRE_MODE_MONITOR;
+	rre->rre_state	= TCP_RRE_STATE_INVALID;
+	ewma_init(&rre->rre_receiving_rate, 1024, 2);
+
+	LOG_IT(TCP_RRE_LOG_INFO, "Entering Monitor Mode (snd_una: %u)\n",
+		tp->snd_una);
+
+	return;
+}
+
+static inline void tcp_rre_process_pre_monitor(struct tcp_sock *tp,
+						struct revsw_rre *rre,
+						u32 ack)
+{
+	if (tp->sacked_out > rre->rre_last_sacked_out) {
+		/* Got another SACK, reduce sending_rate again */
+		rre->rre_sending_rate = max_t(u32, rre->rre_sending_rate/2, 10);
+	}
+	tcp_rre_receive_rate(tp, rre, ack);
+	tcp_rre_enter_monitor_mode(tp, rre);
+
+	return;
+}
+
+/*
+ * @tcp_rre_enter_bm_mode
+ *
+ * Set RRE CCA variables after we get first valid ack.
+ */
+static inline void tcp_rre_post_first_valid_ack(struct tcp_sock *tp,
+						struct revsw_rre *rre,
+						u32 ack)
+{
+	LOG_IT(TCP_RRE_LOG_INFO, "\nFirst valid ACK %u\n", ack);
+	rre->rre_ts_r1	= tp->rx_opt.rcv_tsval;
+	rre->rre_ack_r1	= ack;
+	rre->rre_RDmin	=
+	(int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
+	rre->rre_ts_r2	= tp->rx_opt.rcv_tsecr;
+	return;
+}
 
 /*
  * @tcp_rre_enter_bm_mode
@@ -281,7 +377,7 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 
 	tcp_rre_receive_rate(tp, rre, ack);
 
-	avg_r_rate = (u32) ewma_read(&rre->rev_rre_receiving_rate);
+	avg_r_rate = (u32) ewma_read(&rre->rre_receiving_rate);
 	rre->rre_T = ((avg_r_rate) * rre->rre_rtt_min) / 1000;
 	rre->rre_Bmax = rre->rre_T + (rre->rre_T >> 1); /* t + t/2 */
 	rre->rre_Bmin = rre->rre_T - (rre->rre_T >> 1); /* t - t/2 */
@@ -299,33 +395,24 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 }
 
 /*
- * @tcp_rre_process_mode_init
+ * @tcp_rre_init_monitor_common
  *
- * This function is called whne TCP-RRE is in INIT MODE
- * and when we recive an ack/sack.
+ * Common processing for init and monitor mode
  */
-static void tcp_rre_process_mode_init(struct tcp_sock *tp,
+static inline void tcp_rre_init_monitor_common(struct tcp_sock *tp,
 						struct revsw_rre *rre,
 						u32 ack)
 {
 	int enter_BM_mode;
 
-	if (rre->rre_ack_r1 == 0) {
-		LOG_IT(TCP_RRE_LOG_INFO, "\nFirst valid ACK %u\n", ack);
-		rre->rre_ts_r1	= tp->rx_opt.rcv_tsval;
-		rre->rre_ack_r1	= ack;
-		rre->rre_RDmin	=
-			(int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
-		rre->rre_ts_r2	= tp->rx_opt.rcv_tsecr;
-	} else if (ack >=
-		(rre->rre_ack_r2 +
+	if (ack >= (rre->rre_ack_r2 +
 		(tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE))) {
 
 		/*
-		 * TODO: Do we want to check if sending_rate MUCH LESSER than
-		 * receiving_rate ?
-		 * TODO: Ex: Sending_rate + ((tp->srtt >> 3)/2) < receiving_rate
-		 */
+		* TODO: Do we want to check if sending_rate MUCH LESSER than
+		* receiving_rate ?
+		* TODO: Ex: Sending_rate + ((tp->srtt >> 3)/2) < receiving_rate
+		*/
 
 		/* if (sending_rate < receiving rate) */
 		if ((tp->rx_opt.rcv_tsecr - rre->rre_ts_r2) <
@@ -334,26 +421,40 @@ static void tcp_rre_process_mode_init(struct tcp_sock *tp,
 			 * If we receive TCP_RRE_PACKETS_REQ_CALC_RATE and
 			 * ONLY if those packets were transmitted faster than
 			 * the receiver rate, use it for
-			 *  calculating reciver rate.
+			 * calculating reciver rate.
 			 */
 			enter_BM_mode = 1;
 		} else {
 			LOG_IT(TCP_RRE_LOG_INFO, "Slow Sender\n");
-			rre->rre_ts_r2	= tp->rx_opt.rcv_tsecr;
-			rre->rre_ts_r1	= tp->rx_opt.rcv_tsval;
-			rre->rre_ack_r1	= ack;
-			rre->rre_RDmin	=
+			rre->rre_ts_r2  = tp->rx_opt.rcv_tsecr;
+			rre->rre_ts_r1  = tp->rx_opt.rcv_tsval;
+			rre->rre_ack_r1 = ack;
+			rre->rre_RDmin  =
 			(int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
 			rre->rre_ack_r2 = ack;
 			rre->rre_sending_rate = rre->rre_init_cwnd *
-								tp->mss_cache;
+					       tp->mss_cache;
 			enter_BM_mode = 0;
 		}
 		if (enter_BM_mode)
 			tcp_rre_enter_bm_mode(tp, rre, ack);
 	}
 
-	if (rre->rre_mode == TCP_RRE_MODE_INIT) {
+	return;
+}
+
+/*
+ * @tcp_rre_init_monitor_common
+ *
+ * Set sending rate when you are in init mode. Unless we
+ * have recived a SACK, it will be exponential growth
+ */
+static inline void tcp_rre_set_init_monitor_sending_rate(
+					struct tcp_sock *tp,
+					struct revsw_rre *rre)
+{
+	if (rre->rre_mode == TCP_RRE_MODE_INIT ||
+		rre->rre_mode == TCP_RRE_MODE_MONITOR) {
 		if (rre->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
 			/* TODO: Decrease sending_rate ? */
 			TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK);
@@ -374,6 +475,53 @@ static void tcp_rre_process_mode_init(struct tcp_sock *tp,
 			"Mode: %u. State %u. Sending Rate: %u\n",
 			rre->rre_mode, rre->rre_state, rre->rre_sending_rate);
 	}
+
+	return;
+}
+
+/*
+ * @tcp_rre_process_mode_monitor
+ *
+ * This function is called when TCP-RRE is
+ * in MONITOR MODE and when we recive an ack/sack.
+ */
+static void tcp_rre_process_mode_monitor(struct tcp_sock *tp,
+						struct revsw_rre *rre,
+						u32 ack)
+{
+	if (rre->rre_ack_r1 == 0 && ack > rre->rre_ack_r2) {
+		/*
+		 * We have received all data sent before
+		 * entering monitor mode. Start receive
+		 * rate calculation now. rre->rre_ack_r1
+		 */
+		tcp_rre_post_first_valid_ack(tp, rre, ack);
+	} else {
+		tcp_rre_init_monitor_common(tp, rre, ack);
+	}
+
+	tcp_rre_set_init_monitor_sending_rate(tp, rre);
+
+	return;
+}
+
+/*
+ * @tcp_rre_process_mode_init
+ *
+ * This function is called whne TCP-RRE is in INIT MODE
+ * and when we recive an ack/sack.
+ */
+static void tcp_rre_process_mode_init(struct tcp_sock *tp,
+						struct revsw_rre *rre,
+						u32 ack)
+{
+	if (rre->rre_ack_r1 == 0)
+		tcp_rre_post_first_valid_ack(tp, rre, ack);
+	else
+		tcp_rre_init_monitor_common(tp, rre, ack);
+
+	tcp_rre_set_init_monitor_sending_rate(tp, rre);
+
 	return;
 }
 
@@ -388,12 +536,17 @@ static inline void tcp_rre_common_ack(struct tcp_sock *tp,
 	if (rre->rre_state == TCP_RRE_STATE_SACK &&
 			((tcp_time_stamp - rre->rre_sack_time_stamp) >
 			(tp->srtt >> 3))) {
+		/*
+		 * Throttle sending_rate only for one RTT after
+		 * SACK
+		 */
 		LOG_IT(TCP_RRE_LOG_INFO, "\n\t\t RTT\n\n");
 		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK_DONE);
 	}
 
 	switch (rre->rre_mode) {
 	case TCP_RRE_MODE_INVALID:
+		BUG_ON(rre->rre_mode == TCP_RRE_MODE_INVALID);
 		break;
 
 	case TCP_RRE_MODE_INIT:
@@ -404,7 +557,16 @@ static inline void tcp_rre_common_ack(struct tcp_sock *tp,
 		tcp_rre_process_mode_bm(tp, rre, tp->snd_una);
 		break;
 
+	case TCP_RRE_MODE_PRE_MONITOR:
+		tcp_rre_process_pre_monitor(tp, rre, tp->snd_una);
+		break;
+
+	case TCP_RRE_MODE_MONITOR:
+		tcp_rre_process_mode_monitor(tp, rre, tp->snd_una);
+		break;
+
 	default:
+		BUG_ON(1);
 		break;
 	}
 }
@@ -426,7 +588,7 @@ static inline void tcp_rre_handle_slow_ack(struct tcp_sock *tp,
 			rre->rre_sack_time_stamp = tcp_time_stamp;
 			LOG_IT(TCP_RRE_LOG_INFO, "\t\tSACK\n\n");
 		}
-		rre->rre_last_sacked_out = tp->sacked_out;
+		/*rre->rre_last_sacked_out = tp->sacked_out;*/
 
 		LOG_IT(TCP_RRE_LOG_SACK, "sacked_out %u. ack %u ..",
 				tp->sacked_out,
@@ -442,8 +604,8 @@ static inline void tcp_rre_handle_slow_ack(struct tcp_sock *tp,
 			tp->recv_sack_cache[2].end_seq,
 			tp->recv_sack_cache[3].start_seq,
 			tp->recv_sack_cache[3].end_seq);
-
 	}
+
 	tcp_rre_common_ack(tp, rre);
 }
 
@@ -538,11 +700,20 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		rre->rre_mode		= TCP_RRE_MODE_INIT;
 		rre->rre_ack_r2		= tp->snd_una;
 		rre->rre_sending_rate	= quota = rre->rre_init_cwnd * 1448;
-		ewma_init(&rre->rev_rre_receiving_rate, 1024, 2);
+		ewma_init(&rre->rre_receiving_rate, 1024, 2);
 
 		LOG_IT(TCP_RRE_LOG_INFO, "Very first packet (snd_una: %u)\n",
 								tp->snd_una);
 	} else {
+		if (rre->rre_mode != TCP_RRE_MODE_MONITOR &&
+			rre->rre_mode != TCP_RRE_MODE_PRE_MONITOR &&
+			rre->rre_drain_start_ts > (4 * (tp->srtt >> 3))) {
+			/*
+			 * Enter Monitor Mode. We are in
+			 * BUFFER_DRAIN state for more than 4 RTT
+			 */
+			tcp_rre_enter_monitor_mode(tp, rre);
+		}
 		quota = tcp_rre_remaining_leak_quota(tp, rre);
 	}
 
@@ -695,7 +866,7 @@ static void tcp_rre_event(struct sock *sk, enum tcp_ca_event event)
 static void tcp_rre_syn_post_config(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_rre *rre = inet_csk_ca(sk);
+	/*struct revsw_rre *rre = inet_csk_ca(sk);*/
 
 	LOG_IT(TCP_RRE_LOG_INFO, "I am in tcp_rre_syn_post_config\n");
 
