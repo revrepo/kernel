@@ -221,9 +221,7 @@ EXPORT_SYMBOL_GPL(tcp_session_get_act_cnt);
 
 static int __init tcp_revsw_session_db_register(void)
 {
-	tcp_session_hash_init();
-
-	return 0;
+	return tcp_session_hash_init();
 }
 
 static void __exit tcp_revsw_session_db_unregister(void)
