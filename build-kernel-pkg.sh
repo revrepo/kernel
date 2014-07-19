@@ -9,7 +9,7 @@ if [ ! -e .config ]; then
 	make xconfig || make menuconfig
 fi
 
-make -j$NJOBS deb-pkg LOCALVERSION=-revsw
+make -j$NJOBS INSTALL_MOD_STRIP=1 deb-pkg
 
 cd ../revsw
 
