@@ -1846,8 +1846,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (unlikely(tp->repair) && tp->repair_queue == TCP_SEND_QUEUE)
 			goto repair; /* Skip network transmission */
 
-		if (inet_csk(sk)->icsk_ca_ops->get_leak_quota)
-			cwnd_quota = inet_csk(sk)->icsk_ca_ops->get_leak_quota(sk);
+		if (icsk->icsk_ca_ops->get_cwnd_quota)
+			cwnd_quota = icsk->icsk_ca_ops->get_cwnd_quota(sk, skb);
 		else
 			cwnd_quota = tcp_cwnd_test(tp, skb);
 	
@@ -1859,8 +1859,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 		}
 		
-		if (inet_csk(sk)->icsk_ca_ops->get_leak_quota == NULL && 
-					unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
+		if (icsk->icsk_ca_ops->get_cwnd_quota == NULL && 
+		    unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
 			break;
 
 		if (tso_segs == 1) {

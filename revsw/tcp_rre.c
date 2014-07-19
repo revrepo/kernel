@@ -328,7 +328,7 @@ static __inline__ void revsw_tcp_handle_fast_ack(struct tcp_sock *tp, struct rev
 }
 
 /*
- * @tcp_rre_get_leak_quota
+ * @tcp_rre_get_cwnd_quota
  *
  * This function is called before sending any packet out on wire. Here we determine the number
  * of packets that can be sent out in this leak. A leak is number of packets per second which is
@@ -336,7 +336,7 @@ static __inline__ void revsw_tcp_handle_fast_ack(struct tcp_sock *tp, struct rev
  *
  * TODO: handle tcp_time_stamp reset
  */
-static int tcp_rre_get_leak_quota(struct sock *sk)
+static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_rre *rre = inet_csk_ca(sk);
@@ -550,7 +550,7 @@ static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.set_nwin_size = NULL,
 	.handle_nagle_test = tcp_revsw_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
-	.get_leak_quota = tcp_rre_get_leak_quota,
+	.get_cwnd_quota = tcp_rre_get_cwnd_quota,
 
 	.owner		= THIS_MODULE,
 	.name		= "rre"
