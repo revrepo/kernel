@@ -590,7 +590,7 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.syn_post_config = tcp_revsw_syn_post_config,
 	.set_nwin_size = tcp_revsw_set_nwin_size,
 	.handle_nagle_test = tcp_revsw_handle_nagle_test,
-	.get_session_info = tcp_get_session_info,
+	.get_session_info = tcp_session_get_info,
 
 	.owner		= THIS_MODULE,
 	.name		= "revsw"

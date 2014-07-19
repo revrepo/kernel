@@ -41,6 +41,6 @@ struct tcp_session_info_hash {
 
 extern void tcp_session_start(struct sock *sk);
 extern void tcp_session_delete(struct sock *sk);
-extern int tcp_get_session_info(struct sock *sk, unsigned char *data, int *len);
+extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
 
 #endif /* __TCP_REVSW_SESSION_DB_H__ */

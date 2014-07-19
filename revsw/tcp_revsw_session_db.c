@@ -149,7 +149,7 @@ void tcp_session_delete(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(tcp_session_delete);
 
-int tcp_get_session_info(struct sock *sk, unsigned char *data, int *len)
+int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	__u32 addr = (__force __u32)(inet->inet_daddr);
@@ -188,7 +188,7 @@ int tcp_get_session_info(struct sock *sk, unsigned char *data, int *len)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(tcp_get_session_info);
+EXPORT_SYMBOL_GPL(tcp_session_get_info);
 
 static int __init tcp_revsw_session_db_register(void)
 {
