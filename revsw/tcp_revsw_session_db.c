@@ -82,6 +82,7 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 
 	spin_lock_bh(&thash->lock);
 	hlist_del(&session->node);
+	thash->entries--;
 	spin_unlock_bh(&thash->lock);
 	kfree(session);
 }
@@ -112,6 +113,8 @@ static void tcp_session_add(struct tcp_sock *tp)
 
 	spin_lock_bh(&thash->lock);
 	hlist_add_head(&session->node, &thash->hlist);
+	thash->entries++;
+	thash->act_entries++;
 	spin_unlock_bh(&thash->lock);
 
 	tp->session_info = (void *)session;
@@ -139,10 +142,24 @@ EXPORT_SYMBOL_GPL(tcp_session_start);
 void tcp_session_delete(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_session_entry *session = tp->session_info;
+	const struct inet_sock *inet = inet_sk(sk);
+	__u32 addr = (__force __u32)inet->inet_daddr;
+	struct tcp_session_info_hash *thash;
+	struct tcp_session_entry *session;
+	__u32 hash;
+
+	session = tp->session_info;
 
 	if (!session)
 		return;
+
+	hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
+			TCP_SESSION_HASH_BITS);
+	thash = &tcpsi_hash[hash];
+
+	spin_lock_bh(&thash->lock);
+	thash->act_entries--;
+	spin_unlock_bh(&thash->lock);
 
 	schedule_delayed_work(&session->work,
 			      msecs_to_jiffies(revsw_tcp_session_ttl * 1000));
@@ -154,7 +171,7 @@ int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len)
 	const struct inet_sock *inet = inet_sk(sk);
 	__u32 addr = (__force __u32)(inet->inet_daddr);
 	__u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
-						 TCP_SESSION_HASH_BITS);
+			     TCP_SESSION_HASH_BITS);
 	struct tcp_session_info_hash *thash = &tcpsi_hash[hash];
 	struct tcp_session_entry *session;
 	struct tcp_session_info info;
@@ -189,6 +206,18 @@ int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tcp_session_get_info);
+
+int tcp_session_get_act_cnt(struct sock *sk)
+{
+	const struct inet_sock *inet = inet_sk(sk);
+	__u32 addr = (__force __u32)(inet->inet_daddr);
+	__u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
+			     TCP_SESSION_HASH_BITS);
+	struct tcp_session_info_hash *thash = &tcpsi_hash[hash];
+
+	return thash->act_entries;
+}
+EXPORT_SYMBOL_GPL(tcp_session_get_act_cnt);
 
 static int __init tcp_revsw_session_db_register(void)
 {

@@ -37,10 +37,13 @@ struct tcp_session_entry {
 struct tcp_session_info_hash {
 	struct hlist_head hlist;
 	spinlock_t lock;
+	__u16 entries;
+	__u16 act_entries;
 };
 
 extern void tcp_session_start(struct sock *sk);
 extern void tcp_session_delete(struct sock *sk);
 extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
+extern int tcp_session_get_act_cnt(struct sock *sk);
 
 #endif /* __TCP_REVSW_SESSION_DB_H__ */
