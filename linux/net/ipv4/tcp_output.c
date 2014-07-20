@@ -1859,9 +1859,13 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 		}
 		
-		if (icsk->icsk_ca_ops->get_cwnd_quota == NULL && 
-		    unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
-			break;
+		if (icsk->icsk_ca_ops->snd_wnd_test)
+			if (unlikely(!icsk->icsk_ca_ops->snd_wnd_test(tp, skb,
+								      mss_now)))
+				break;
+		else
+			if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
+				break;
 
 		if (tso_segs == 1) {
 			if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->handle_nagle_test) {

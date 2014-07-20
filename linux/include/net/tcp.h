@@ -799,8 +799,12 @@ struct tcp_congestion_ops {
 	bool (*handle_nagle_test)(struct sock *sk, struct sk_buff *skb, 
 				  unsigned int mss_now, int nonagle);
 	/* Session Info handler */
-	int (*get_session_info)(struct sock *sk, unsigned char *sinfo, int *len);
+	int (*get_session_info)(struct sock *sk, unsigned char *sinfo,
+				int *len);
 	int (*get_cwnd_quota)(struct sock *sk, const struct sk_buff *skb);
+	bool (*snd_wnd_test)(const struct tcp_sock *tp,
+			     const struct sk_buff *skb,
+			     unsigned int cur_mss);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;
