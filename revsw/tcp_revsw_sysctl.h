@@ -12,7 +12,7 @@
 #define TCP_SESSION_TTL_MAX		259200
 #define TCP_SESSION_TTL_DEFAULT		10800
 
-#define REVSW_LARGE_RWND_SIZE		65536
+#define REVSW_LARGE_RWND_SIZE		65535
 #define REVSW_RRE_LOG_DEFAULT		0
 
 extern int revsw_sm_rcv_wnd;
