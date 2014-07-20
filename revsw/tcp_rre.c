@@ -529,8 +529,15 @@ static void tcp_rre_syn_post_config(struct sock *sk)
 }
 
 static bool
-tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
+tcp_rre_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 			    unsigned int mss_now, int nonagle)
+{
+	return true;
+}
+
+static bool
+tcp_rre_snd_wnd_test(const struct tcp_sock *tp,const struct sk_buff *skb,
+		     unsigned int cur_mss)
 {
 	return true;
 }
@@ -548,9 +555,10 @@ static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.pkts_acked	= tcp_rre_pkts_acked,
 	.syn_post_config = tcp_rre_syn_post_config,
 	.set_nwin_size = NULL,
-	.handle_nagle_test = tcp_revsw_handle_nagle_test,
+	.handle_nagle_test = tcp_rre_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
 	.get_cwnd_quota = tcp_rre_get_cwnd_quota,
+	.snd_wnd_test = tcp_rre_snd_wnd_test,
 
 	.owner		= THIS_MODULE,
 	.name		= "rre"
