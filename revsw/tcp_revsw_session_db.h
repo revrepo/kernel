@@ -24,6 +24,7 @@ struct tcp_session_info {
 	__u32 cookie;
 	__u32 latency;
 	__u32 bandwidth;
+	__u8 quota_reached;
 };
 
 struct tcp_session_entry {
