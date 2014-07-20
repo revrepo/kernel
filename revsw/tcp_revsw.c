@@ -571,9 +571,13 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 
 static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_session_entry *session;
+ 	struct tcp_sock *tp = tcp_sk(sk);
+ 
+	session = tp->session_info;
 
-	if ((nwin > revsw_cong_wnd) || (nwin == 0))
+	if ((session && session->info.quota_reached) || (nwin == 0) ||
+	    (nwin > tp->snd_wnd))
 		tp->snd_wnd = nwin;
 }
 
@@ -582,6 +586,36 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 			    unsigned int mss_now, int nonagle)
 {
 	return true;
+}
+
+static int tcp_revsw_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
+{
+	struct tcp_session_entry *session;
+	struct tcp_sock *tp = tcp_sk(sk);
+	u32 in_flight, cwnd;
+	u32 quota = 0;
+
+	session = tp->session_info;
+
+	/* Don't be strict about the congestion window for the final FIN.  */
+	if ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
+	    tcp_skb_pcount(skb) == 1) {
+		quota = 1;
+		goto exit;
+	}
+
+	in_flight = tcp_packets_in_flight(tp);
+	cwnd = tp->snd_cwnd;
+	if (in_flight < cwnd) {
+		quota = cwnd - in_flight;
+		goto exit;
+	}
+
+	if (session)
+		session->info.quota_reached = 1;
+
+exit:
+	return quota;
 }
 
 static struct tcp_congestion_ops tcp_revsw __read_mostly = {
@@ -599,6 +633,7 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.set_nwin_size = tcp_revsw_set_nwin_size,
 	.handle_nagle_test = tcp_revsw_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
+	.get_cwnd_quota = tcp_revsw_get_cwnd_quota,
 
 	.owner		= THIS_MODULE,
 	.name		= "revsw"
