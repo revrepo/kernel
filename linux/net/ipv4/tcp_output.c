@@ -1870,7 +1870,9 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (tso_segs == 1) {
 			if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->handle_nagle_test) {
 				if (unlikely(!icsk->icsk_ca_ops->handle_nagle_test(sk, 
-								skb, mss_now, nonagle)))
+								skb, mss_now,
+								(tcp_skb_is_last(sk, skb) ?
+                                                                 nonagle : TCP_NAGLE_PUSH))))
 					break;
 			} else {
 				if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
