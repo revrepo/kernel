@@ -585,7 +585,24 @@ static bool
 tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 			    unsigned int mss_now, int nonagle)
 {
-	return true;
+	struct tcp_sock *tp = tcp_sk(sk);
+	bool minscheck;
+
+	if (nonagle & TCP_NAGLE_PUSH)
+		return true;
+
+	/* Don't use the nagle rule for urgent data (or for the final FIN). */
+	if ((tp->snd_una != tp->snd_up) || (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN))
+		return true;
+
+	minscheck = after(tp->snd_sml, tp->snd_una) &&
+		    !after(tp->snd_sml, tp->snd_nxt);
+
+	if (!((skb->len < 1024) && ((nonagle & TCP_NAGLE_CORK) ||
+	    (!nonagle && tp->packets_out && minscheck))))
+		return true;
+
+	return false;
 }
 
 static int tcp_revsw_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
