@@ -15,11 +15,16 @@
 #define REVSW_LARGE_RWND_SIZE		65535
 #define REVSW_RRE_LOG_DEFAULT		0
 
+#define REVSW_PACKET_SIZE_MIN          300
+#define REVSW_PACKET_SIZE_MAX          2000
+#define REVSW_PACKET_SIZE_DEFAULT      1024
+
 extern int revsw_sm_rcv_wnd;
 extern int revsw_lrg_rcv_wnd;
 extern int revsw_cong_wnd;
 extern int revsw_tcp_session_ttl;
 extern int revsw_tcp_rre_loglevel;
+extern int revsw_packet_size;
 
 #endif /* __TCP_REVSW_SYSCTL_H__ */
 
