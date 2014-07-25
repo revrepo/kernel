@@ -18,11 +18,6 @@
 #include "tcp_revsw_sysctl.h"
 #include "tcp_revsw_session_db.h"
 
-/********************************************************************
- *
- * RevSw Congestion Control Algorithm
- *
- ********************************************************************/
 static int fast_convergence __read_mostly = 1;
 static int beta __read_mostly = 717;
 static int bic_scale __read_mostly = 41;
@@ -31,6 +26,45 @@ static int tcp_friendliness __read_mostly = 1;
 static u32 cube_rtt_scale __read_mostly;
 static u32 beta_scale __read_mostly;
 static u64 cube_factor __read_mostly;
+
+/*
+ * @tcp_revsw_division
+ * This function provides a means of performing integer division 
+ * without using the division operator.  This is to be used in 
+ * function where we may experience bugs complaining about attempts
+ * to schedule functions during an atomic action.
+ */
+static u32 tcp_revsw_division(u32 dividend, u32 divisor)
+{
+	u32 denom = divisor;
+	u32 tmp = 1;
+	u32 answer = 0;
+
+	if (denom > dividend)
+		return 0;
+
+	if (denom == dividend)
+		return 1;
+
+	while (denom <= dividend) {
+		denom <<= 1;
+		tmp <<= 1;
+	}
+
+	denom >>= 1;
+	tmp >>= 1;
+
+	while (tmp != 0) {
+		if (dividend >= denom) {
+			dividend -= denom;
+			answer |= tmp;
+		}
+		tmp >>= 1;
+		denom >>= 1;
+	}
+
+	return answer;
+}
 
 /*
  * @tcp_revsw_init
@@ -555,7 +589,9 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 		tp->snd_wnd *= revsw_lrg_rcv_wnd;
 
  	if (revsw_cong_wnd == 0)
-		tp->snd_cwnd = tp->snd_wnd >> 10;
+		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, 
+						  revsw_packet_size);
+
  	else
 		tp->snd_cwnd = revsw_cong_wnd;
 
@@ -598,7 +634,7 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 	minscheck = after(tp->snd_sml, tp->snd_una) &&
 		    !after(tp->snd_sml, tp->snd_nxt);
 
-	if (!((skb->len < 1024) && ((nonagle & TCP_NAGLE_CORK) ||
+	if (!((skb->len < revsw_packet_size) && ((nonagle & TCP_NAGLE_CORK) ||
 	    (!nonagle && tp->packets_out && minscheck))))
 		return true;
 
