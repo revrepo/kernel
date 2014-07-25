@@ -60,6 +60,11 @@ static int revsw_packet_size_max = REVSW_PACKET_SIZE_MAX;
 int revsw_packet_size __read_mostly = REVSW_PACKET_SIZE_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_packet_size);
 
+static int revsw_active_scale_min = REVSW_ACTIVE_SCALE_MIN;
+static int revsw_active_scale_max = REVSW_ACTIVE_SCALE_MAX;
+int revsw_active_scale __read_mostly = REVSW_ACTIVE_SCALE_DEFAULT;
+EXPORT_SYMBOL_GPL(revsw_active_scale);
+
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
 static struct ctl_table revsw_ctl_table[] = {
@@ -121,6 +126,15 @@ static struct ctl_table revsw_ctl_table[] = {
 		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &revsw_packet_size_min,
 		.extra2 = &revsw_packet_size_max,
+	},
+	{
+		.procname = "revsw_active_scale",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_active_scale,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_active_scale_min,
+		.extra2 = &revsw_active_scale_max,
 	},
 
 	{}

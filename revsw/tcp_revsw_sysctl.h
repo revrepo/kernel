@@ -19,12 +19,17 @@
 #define REVSW_PACKET_SIZE_MAX          2000
 #define REVSW_PACKET_SIZE_DEFAULT      1024
 
+#define REVSW_ACTIVE_SCALE_MIN         10
+#define REVSW_ACTIVE_SCALE_MAX         100
+#define REVSW_ACTIVE_SCALE_DEFAULT     50
+
 extern int revsw_sm_rcv_wnd;
 extern int revsw_lrg_rcv_wnd;
 extern int revsw_cong_wnd;
 extern int revsw_tcp_session_ttl;
 extern int revsw_tcp_rre_loglevel;
 extern int revsw_packet_size;
+extern int revsw_active_scale;
 
 #endif /* __TCP_REVSW_SYSCTL_H__ */
 
