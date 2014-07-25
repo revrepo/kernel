@@ -582,6 +582,7 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 {
 	int act_cnt = tcp_session_get_act_cnt(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	u32 tmp;
 
 	if (tp->snd_wnd < REVSW_LARGE_RWND_SIZE)
 		tp->snd_wnd *= revsw_sm_rcv_wnd;
@@ -596,7 +597,8 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
 		tp->snd_cwnd = revsw_cong_wnd;
 
 	if (act_cnt) {
-		tp->snd_cwnd = tp->snd_cwnd >> 1;
+		tmp = tcp_revsw_division(100, revsw_active_scale);
+		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, tmp); 
 	}
 
 	if (tp->snd_cwnd < 10)
