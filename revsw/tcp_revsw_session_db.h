@@ -18,7 +18,7 @@
 #define TCP_SESSION_HASH_SIZE   (1 << TCP_SESSION_HASH_BITS)
 
 #define TCP_SESSION_INFO_VERSION 1
-#define TCP_CCA_PRIV_UINTS	16
+#define TCP_CCA_PRIV_UINTS	40
 #define TCP_CCA_PRIV_SIZE	(TCP_CCA_PRIV_UINTS * sizeof(u32))
 
 struct tcp_session_info {

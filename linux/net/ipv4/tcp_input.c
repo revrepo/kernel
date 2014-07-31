@@ -4733,11 +4733,12 @@ static void tcp_check_space(struct sock *sk)
 	}
 }
 
-static inline void tcp_data_snd_check(struct sock *sk)
+void tcp_data_snd_check(struct sock *sk)
 {
 	tcp_push_pending_frames(sk);
 	tcp_check_space(sk);
 }
+EXPORT_SYMBOL(tcp_data_snd_check);
 
 /*
  * Check if sending an ack is needed.
