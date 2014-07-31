@@ -248,13 +248,19 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 	r_rate = (unsigned long) ((1000*acked_data)/time_in_milisecs);
 	ewma_add(&rre->s->rre_receiving_rate, r_rate);
 
+	/*
+	 * TODO: Should we NOT take sample when we are
+	 * in TCP_RRE_STATE_SACK ? As you can see below,
+	 * we are taking samples now.
+	 */
+
 	next_checkpoint =
 		(rre->i->rre_ack_r2 + tp->mss_cache * TCP_RRE_TBUFF_PACKETS);
 	if ((ack + sacked_bytes > next_checkpoint)) {
 		rre->i->rre_ts_r1	= rre->i->rre_ts_r2;
 		rre->i->rre_ack_r1	= rre->i->rre_ack_r2;
 		rre->i->rre_ts_r2	= tp->rx_opt.rcv_tsval;
-		rre->i->rre_ack_r2	= ack;
+		rre->i->rre_ack_r2	= ack + sacked_bytes;
 		LOG_IT(TCP_RRE_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
 			rre->i->rre_sending_rate, ack,
 			next_checkpoint);
