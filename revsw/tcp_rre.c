@@ -88,6 +88,8 @@ struct icsk_priv {
 	u32 rre_sack_time_stamp;
 
 	u32 rre_drain_start_ts;
+	u32 rre_syn_ack_tsecr;
+	u16 rre_estimated_tick_gra;
 	u8 rre_mode;
 	u8 rre_state;
 };
@@ -113,10 +115,6 @@ struct revsw_rre {
 	struct icsk_priv *i;
 	struct sess_priv *s;
 };
-
-#define TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks, in_msecs)	do { \
-	in_msecs = jiffies_to_msecs(ticks);	\
-} while (0)
 
 #define LOG_IT(loglevel, format, ...)  { \
 	if (revsw_tcp_rre_loglevel && revsw_tcp_rre_loglevel >= loglevel)  { \
@@ -152,6 +150,67 @@ struct revsw_rre {
 		__rre.s = (struct sess_priv *) (&(__session->cca_priv)); \
 	else	\
 		__rre.s = NULL;	\
+}
+
+/* TODO: What do we do when rre->i->rre_estimated_tick_gra  is 0 ? */
+#define TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks, in_msecs)	do { \
+	if (rre->i->rre_estimated_tick_gra > 0)	\
+		in_msecs = (ticks * rre->i->rre_estimated_tick_gra);	\
+	else	\
+		in_msecs = jiffies_to_msecs(ticks);	\
+} while (0)
+
+/*
+ * @tcp_rre_estimate_granularity
+ *
+ * Estimate client's TCP timestamp granulairty as
+ * it is required to calculate the receiving rate.
+ */
+static inline void tcp_rre_estimate_granularity(struct tcp_sock *tp,
+						struct revsw_rre *rre)
+{
+	int granularity;
+
+	/* granularity = msecs past / num of ticks */
+	granularity =
+		jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr) /
+		(tp->rx_opt.rcv_tsval - tp->rre_syn_tsval);
+
+	if (granularity >= 0 && granularity <= 2) {
+		granularity = 1;
+	} else if (granularity > 2 && granularity <= 6) {
+		granularity = 4;
+	} else if (granularity > 6 && granularity <= 14) {
+		granularity = 10;
+	} else {
+		LOG_IT(TCP_RRE_LOG_ERR,
+			"Wrong previous Estimation of Client TCP Granularity."
+			" Current Estimation: %u. Previous Estimation: %u\n",
+				granularity, rre->i->rre_estimated_tick_gra);
+		granularity = 0;
+	}
+
+	if (granularity != rre->i->rre_estimated_tick_gra) {
+		int loglevel;
+
+		if(rre->i->rre_estimated_tick_gra)
+			loglevel = TCP_RRE_LOG_ERR;
+		else
+			loglevel = TCP_RRE_LOG_INFO;
+
+		LOG_IT(loglevel,
+			"--------------> Changing granularity from %u to %u\n",
+			rre->i->rre_estimated_tick_gra, granularity);
+
+		LOG_IT(TCP_RRE_LOG_INFO,
+			"%u %u %u %u\n",
+			tcp_time_stamp, rre->i->rre_syn_ack_tsecr,
+			tp->rx_opt.rcv_tsval, tp->rre_syn_tsval);
+
+		rre->i->rre_estimated_tick_gra = granularity;
+	}
+
+	return;
 }
 
 /*
@@ -1047,9 +1106,14 @@ static void tcp_rre_syn_post_config(struct sock *sk)
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE, "%s: Entering\n", __func__);
 
-	/*tp->rre_first_hs_tsval =
-			tp->rre_first_hs_tsval-tp->rx_opt.rcv_tsval;*/
-	/*rre->s->rre_first_rtt = tcp_time_stamp - tp->rx_opt.rcv_tsecr;*/
+	if (!tp->rx_opt.tstamp_ok) {
+		LOG_IT(TCP_RRE_LOG_ERR,
+		"%s: Timestamp not enabled on client . RBE can not be CCA for this connection\n",
+		__func__);
+	}
+
+	/* TODO: SYN ACK must not be re-tx */
+	rre->i->rre_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
 
 	/* TODO: Use same function from both revsw and rre modules. */
 	/*

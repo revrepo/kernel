@@ -324,6 +324,7 @@ struct tcp_sock {
 	/* TCP Session Database */
 	void *session_info;
 	struct delayed_work session_work;
+	u32 rre_syn_tsval;
 };
 
 enum tsq_flags {
