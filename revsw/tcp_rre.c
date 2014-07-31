@@ -55,6 +55,11 @@
 #define TCP_RRE_STATE_SACK_DONE  (TCP_RRE_STATE_INVALID + 5)
 #define TCP_RRE_STATE_UNUSED_MAX  (TCP_RRE_STATE_INVALID + 6)
 
+#define TCP_RRE_HONOR_RCV_WND 0
+#define TCP_RRE_IGNORE_INIT_BURST (TCP_RRE_HONOR_RCV_WND + 1)
+#define TCP_RRE_HONOR_NO_REXMIT (TCP_RRE_HONOR_RCV_WND + 2)
+#define TCP_RRE_IGNORE_RCV_WND (TCP_RRE_HONOR_RCV_WND + 3)
+
 const char *tcp_rre_mode_string[TCP_RRE_MODE_UNUSED_MAX] = {
 	"TCP_RRE_MODE_INVALID", "TCP_RRE_MODE_INIT", "TCP_RRE_MODE_BM",
 	"TCP_RRE_MODE_PRE_MONITOR", "TCP_RRE_MODE_MONITOR"
@@ -903,7 +908,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 
 		rre->i->rre_bytes_sent_this_leak	= 0;
 		rre->i->rre_leak_start_ts		= tcp_time_stamp;
-		rre->i->rre_init_cwnd			= revsw_cong_wnd;
+		rre->i->rre_init_cwnd			= tp->snd_cwnd;
 		rre->i->rre_ack_r2			= tp->snd_una;
 		rre->i->rre_sending_rate = quota = rre->i->rre_init_cwnd * 1448;
 		TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_INIT);
@@ -919,7 +924,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		if (mod_timer(&rre->s->rre_timer, jiffies +
 			msecs_to_jiffies(TCP_RRE_LEAK_QUOTA_TIMER))) {
 			LOG_IT(TCP_RRE_LOG_ERR,
-				"%s: Error modifying timer", __func__);
+				"%s: Error modifying timer\n", __func__);
 		}
 
 		LOG_IT(TCP_RRE_LOG_INFO, "Sending Very first packet (%u)\n",
@@ -1116,10 +1121,11 @@ static void tcp_rre_syn_post_config(struct sock *sk)
 		LOG_IT(TCP_RRE_LOG_ERR,
 		"%s: Timestamp not enabled on client . RBE can not be CCA for this connection\n",
 		__func__);
+		rre->i->rre_syn_ack_tsecr = 0;
+	} else {
+		/* TODO: SYN ACK must not be re-tx */
+		rre->i->rre_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
 	}
-
-	/* TODO: SYN ACK must not be re-tx */
-	rre->i->rre_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
 
 	/* TODO: Use same function from both revsw and rre modules. */
 	/*
@@ -1137,11 +1143,55 @@ tcp_rre_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 	return true;
 }
 
+/*
+ * @tcp_rre_snd_wnd_test
+ *
+ * This function determines if we should
+ * ignore or honor receive window?
+ */
 static bool
-tcp_rre_snd_wnd_test(const struct tcp_sock *tp,const struct sk_buff *skb,
+tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		     unsigned int cur_mss)
 {
-	return true;
+	int test_snd_wnd;
+	struct sock *sk = (struct sock *) tp;
+	struct revsw_rre *rre, __rre;
+
+	TCP_RRE_PRIVATE_DATE(__rre);
+	rre = &__rre;
+
+	switch (revsw_tcp_test_snd_wnd) {
+
+	case TCP_RRE_IGNORE_INIT_BURST:
+		if (revsw_cong_wnd && rre->i->rre_mode == TCP_RRE_MODE_INIT)
+			test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
+		else
+			test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+
+	case TCP_RRE_HONOR_NO_REXMIT:
+		if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN ||
+				rre->i->rre_state == TCP_RRE_STATE_SACK)
+			test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+
+		/* No break, continue */
+
+	case TCP_RRE_IGNORE_RCV_WND:
+		test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
+
+	case TCP_RRE_HONOR_RCV_WND:
+		test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+	}
+
+	if (test_snd_wnd == TCP_RRE_HONOR_RCV_WND) {
+		u32 end_seq = TCP_SKB_CB(skb)->end_seq;
+
+		if (skb->len > cur_mss)
+			end_seq = TCP_SKB_CB(skb)->seq + cur_mss;
+
+		return !after(end_seq, tcp_wnd_end(tp));
+	} else {
+		return TCP_RRE_IGNORE_RCV_WND;
+	}
 }
 
 static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {

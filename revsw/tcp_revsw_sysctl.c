@@ -55,6 +55,9 @@ static int revsw_rto __read_mostly = REVSW_RTO_DEFAULT;
 int revsw_tcp_rre_loglevel __read_mostly = REVSW_RRE_LOG_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_rre_loglevel);
 
+int revsw_tcp_test_snd_wnd __read_mostly = 0;
+EXPORT_SYMBOL_GPL(revsw_tcp_test_snd_wnd);
+
 static int revsw_packet_size_min = REVSW_PACKET_SIZE_MIN;
 static int revsw_packet_size_max = REVSW_PACKET_SIZE_MAX;
 int revsw_packet_size __read_mostly = REVSW_PACKET_SIZE_DEFAULT;
@@ -116,6 +119,13 @@ static struct ctl_table revsw_ctl_table[] = {
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.data = &revsw_tcp_rre_loglevel,
+		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "revsw_tcp_test_snd_wnd",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_tcp_test_snd_wnd,
 		.proc_handler = &proc_dointvec,
 	},
 	{

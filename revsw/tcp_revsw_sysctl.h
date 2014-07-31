@@ -28,6 +28,7 @@ extern int revsw_lrg_rcv_wnd;
 extern int revsw_cong_wnd;
 extern int revsw_tcp_session_ttl;
 extern int revsw_tcp_rre_loglevel;
+extern int revsw_tcp_test_snd_wnd;
 extern int revsw_packet_size;
 extern int revsw_active_scale;
 
