@@ -52,7 +52,7 @@ int revsw_tcp_session_ttl __read_mostly = TCP_SESSION_TTL_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_session_ttl);
 
 static int revsw_rto __read_mostly = REVSW_RTO_DEFAULT;
-int revsw_tcp_rre_loglevel __read_mostly = TCP_RRE_LOG_DEFAULT;
+int revsw_tcp_rre_loglevel __read_mostly = REVSW_RRE_LOG_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_rre_loglevel);
 
 static int revsw_packet_size_min = REVSW_PACKET_SIZE_MIN;

@@ -34,11 +34,11 @@
 #define TCP_RRE_MSECS_PER_LEAK		1000
 #define TCP_RRE_LEAK_QUOTA_TIMER	990
 
-#define TCP_RRE_LOG_NOLOG  TCP_RRE_LOG_DEFAULT
-#define TCP_RRE_LOG_ERR  (TCP_RRE_LOG_DEFAULT + 1)
-#define TCP_RRE_LOG_INFO  (TCP_RRE_LOG_DEFAULT + 2)
-#define TCP_RRE_LOG_SACK  (TCP_RRE_LOG_DEFAULT + 3)
-#define TCP_RRE_LOG_VERBOSE  (TCP_RRE_LOG_DEFAULT + 4)
+#define TCP_RRE_LOG_NOLOG  REVSW_RRE_LOG_DEFAULT
+#define TCP_RRE_LOG_ERR  (REVSW_RRE_LOG_DEFAULT + 1)
+#define TCP_RRE_LOG_INFO  (REVSW_RRE_LOG_DEFAULT + 2)
+#define TCP_RRE_LOG_SACK  (REVSW_RRE_LOG_DEFAULT + 3)
+#define TCP_RRE_LOG_VERBOSE  (REVSW_RRE_LOG_DEFAULT + 4)
 
 #define TCP_RRE_MODE_INVALID  0
 #define TCP_RRE_MODE_INIT  (TCP_RRE_MODE_INVALID + 1)
@@ -193,7 +193,7 @@ static inline void tcp_rre_estimate_granularity(struct tcp_sock *tp,
 	if (granularity != rre->i->rre_estimated_tick_gra) {
 		int loglevel;
 
-		if(rre->i->rre_estimated_tick_gra)
+		if (rre->i->rre_estimated_tick_gra)
 			loglevel = TCP_RRE_LOG_ERR;
 		else
 			loglevel = TCP_RRE_LOG_INFO;
