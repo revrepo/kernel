@@ -28,45 +28,6 @@ static u32 beta_scale __read_mostly;
 static u64 cube_factor __read_mostly;
 
 /*
- * @tcp_revsw_division
- * This function provides a means of performing integer division 
- * without using the division operator.  This is to be used in 
- * function where we may experience bugs complaining about attempts
- * to schedule functions during an atomic action.
- */
-static u32 tcp_revsw_division(u32 dividend, u32 divisor)
-{
-	u32 denom = divisor;
-	u32 tmp = 1;
-	u32 answer = 0;
-
-	if (denom > dividend)
-		return 0;
-
-	if (denom == dividend)
-		return 1;
-
-	while (denom <= dividend) {
-		denom <<= 1;
-		tmp <<= 1;
-	}
-
-	denom >>= 1;
-	tmp >>= 1;
-
-	while (tmp != 0) {
-		if (dividend >= denom) {
-			dividend -= denom;
-			answer |= tmp;
-		}
-		tmp >>= 1;
-		denom >>= 1;
-	}
-
-	return answer;
-}
-
-/*
  * @tcp_revsw_init
  * This function initializes fields used in TCP Westwood+,
  * it is called after the initial SYN, so the sequence numbers
@@ -578,35 +539,6 @@ static void tcp_revsw_info(struct sock *sk, u32 ext,
 	}
 }
 
-static void tcp_revsw_syn_post_config(struct sock *sk)
-{
-	int act_cnt = tcp_session_get_act_cnt(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
-	u32 tmp;
-
-	if (tp->snd_wnd < REVSW_LARGE_RWND_SIZE)
-		tp->snd_wnd *= revsw_sm_rcv_wnd;
-	else if (tp->snd_wnd < (REVSW_LARGE_RWND_SIZE * 2))
-		tp->snd_wnd *= revsw_lrg_rcv_wnd;
-
- 	if (revsw_cong_wnd == 0)
-		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, 
-						  revsw_packet_size);
-
- 	else
-		tp->snd_cwnd = revsw_cong_wnd;
-
-	if (act_cnt) {
-		tmp = tcp_revsw_division(100, revsw_active_scale);
-		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, tmp); 
-	}
-
-	if (tp->snd_cwnd < 10)
-		tp->snd_cwnd = 10;
-
-	sk->sk_sndbuf = 3 * tp->snd_wnd;
-}
-
 static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 {
 	struct tcp_session_entry *session;
@@ -617,30 +549,6 @@ static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 	if ((session && session->info.quota_reached) || (nwin == 0) ||
 	    (nwin > tp->snd_wnd))
 		tp->snd_wnd = nwin;
-}
-
-static bool
-tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
-			    unsigned int mss_now, int nonagle)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	bool minscheck;
-
-	if (nonagle & TCP_NAGLE_PUSH)
-		return true;
-
-	/* Don't use the nagle rule for urgent data (or for the final FIN). */
-	if ((tp->snd_una != tp->snd_up) || (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN))
-		return true;
-
-	minscheck = after(tp->snd_sml, tp->snd_una) &&
-		    !after(tp->snd_sml, tp->snd_nxt);
-
-	if (!((skb->len < revsw_packet_size) && ((nonagle & TCP_NAGLE_CORK) ||
-	    (!nonagle && tp->packets_out && minscheck))))
-		return true;
-
-	return false;
 }
 
 static int tcp_revsw_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)

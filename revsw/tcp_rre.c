@@ -12,6 +12,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
+#include "tcp_revsw.h"
 #include "tcp_revsw_sysctl.h"
 #include "tcp_revsw_session_db.h"
 
@@ -944,8 +945,10 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 				"%s: Error modifying timer\n", __func__);
 		}
 
-		LOG_IT(TCP_RRE_LOG_INFO, "Sending Very first packet (%u)\n",
-						rre->i->rre_init_cwnd);
+		LOG_IT(TCP_RRE_LOG_INFO,
+			"Sending Very first packet (%u / %u) and una : %u\n",
+					rre->i->rre_init_cwnd, tp->snd_cwnd,
+					tp->snd_una);
 	} else {
 		if (rre->i->rre_mode != TCP_RRE_MODE_MONITOR &&
 			rre->i->rre_mode != TCP_RRE_MODE_PRE_MONITOR &&
@@ -1144,20 +1147,14 @@ static void tcp_rre_syn_post_config(struct sock *sk)
 		rre->i->rre_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
 	}
 
-	/* TODO: Use same function from both revsw and rre modules. */
-	/*
-	 * Modify the congestion and send windows.  Also fix the
-	 * sndbuf size.  Will be changed to use sysctls when they
-	 * are available.
-	 */
-	sk->sk_sndbuf = 3 * tp->snd_wnd;
+	tcp_revsw_syn_post_config(sk);
 }
 
 static bool
 tcp_rre_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 			    unsigned int mss_now, int nonagle)
 {
-	return true;
+	return tcp_revsw_handle_nagle_test(sk, skb, mss_now, nonagle);
 }
 
 /*
