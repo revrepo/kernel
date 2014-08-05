@@ -157,6 +157,13 @@ struct revsw_rre {
 		__rre.s = NULL;	\
 }
 
+#define TCP_RRE_CALC_TBUFF(tp, rre)	do { \
+	rre->s->rre_T = (((u32) ewma_read(&rre->s->rre_receiving_rate)) \
+					* rre->i->rre_rtt_min) / 1000;	\
+	rre->s->rre_Bmax = rre->s->rre_T + (rre->s->rre_T >> 1); /* t + t/2 */\
+	rre->s->rre_Bmin = rre->s->rre_T - (rre->s->rre_T >> 1); /* t - t/2 */\
+} while (0)
+
 /* TODO: What do we do when rre->i->rre_estimated_tick_gra  is 0 ? */
 #define TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks, in_msecs)	do { \
 	if (rre->i->rre_estimated_tick_gra > 0)	\
@@ -171,10 +178,10 @@ struct revsw_rre {
  * Estimate client's TCP timestamp granulairty as
  * it is required to calculate the receiving rate.
  */
-static inline void tcp_rre_estimate_granularity(struct tcp_sock *tp,
+static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 						struct revsw_rre *rre)
 {
-	int granularity;
+	int granularity, changed = 0;
 
 	/* granularity = msecs past / num of ticks */
 	granularity =
@@ -213,9 +220,10 @@ static inline void tcp_rre_estimate_granularity(struct tcp_sock *tp,
 			tp->rx_opt.rcv_tsval, tp->rre_syn_tsval);
 
 		rre->i->rre_estimated_tick_gra = granularity;
+		changed = 1;
 	}
 
-	return;
+	return changed;
 }
 
 /*
@@ -245,6 +253,7 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 	ticks_delta = tp->rx_opt.rcv_tsval - rre->i->rre_ts_r1;
 	TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks_delta, time_in_milisecs);
 	if (time_in_milisecs == 0) {
+		/* TODO */
 		LOG_IT(TCP_RRE_LOG_ERR, "%s: ZERO miliseconds past?????\n\n",
 								__func__);
 		return 0;
@@ -266,6 +275,9 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 		rre->i->rre_ack_r1	= rre->i->rre_ack_r2;
 		rre->i->rre_ts_r2	= tp->rx_opt.rcv_tsval;
 		rre->i->rre_ack_r2	= ack + sacked_bytes;
+		if (tcp_rre_estimate_granularity(tp, rre))
+			TCP_RRE_CALC_TBUFF(tp, rre);
+
 		LOG_IT(TCP_RRE_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
 			rre->i->rre_sending_rate, ack,
 			next_checkpoint);
@@ -295,7 +307,8 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 static inline void tcp_rre_fill_buffer(struct tcp_sock *tp,
 					 struct revsw_rre *rre)
 {
-	u32 srtt_msecs, delta_sending_rate;
+	u32 srtt_msecs;
+	u32 delta_sending_rate; /* per second */
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate =
@@ -466,7 +479,10 @@ static inline void tcp_rre_post_first_valid_ack(struct tcp_sock *tp,
 						struct revsw_rre *rre,
 						u32 ack)
 {
-	LOG_IT(TCP_RRE_LOG_INFO, "\nFirst valid ACK %u\n", ack);
+	LOG_IT(TCP_RRE_LOG_INFO, "\nFirst valid ACK %u. %u / %u\n",
+							ack,
+							tp->snd_cwnd,
+							tp->snd_wnd);
 	rre->i->rre_ts_r1	= tp->rx_opt.rcv_tsval;
 	rre->i->rre_ack_r1	= ack;
 	rre->s->rre_RDmin	=
@@ -484,8 +500,6 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 						struct revsw_rre *rre,
 						u32 ack)
 {
-	u32 avg_r_rate;
-
 	LOG_IT(TCP_RRE_LOG_INFO,
 		"Switching to BM mode after %u packets are acked.\n",
 		(ack - rre->i->rre_ack_r2)/tp->mss_cache);
@@ -494,19 +508,16 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 	rre->i->rre_ack_r2 = ack;
 
 	tcp_rre_receive_rate(tp, rre, ack);
+	TCP_RRE_CALC_TBUFF(tp, rre);
 
-	avg_r_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
-	rre->s->rre_T = ((avg_r_rate) * rre->i->rre_rtt_min) / 1000;
-	rre->s->rre_Bmax = rre->s->rre_T + (rre->s->rre_T >> 1); /* t + t/2 */
-	rre->s->rre_Bmin = rre->s->rre_T - (rre->s->rre_T >> 1); /* t - t/2 */
-
-	LOG_IT(TCP_RRE_LOG_INFO, "T %u, Bmax %u, Bmin %u, RDmin %d\n",
+	LOG_IT(TCP_RRE_LOG_INFO, "T %u, Bmax %u, Bmin %u, RDmin %d. r_rate = %u\n",
 			rre->s->rre_T,
 			rre->s->rre_Bmax,
 			rre->s->rre_Bmin,
-			rre->s->rre_RDmin);
+			rre->s->rre_RDmin,
+			(u32) ewma_read(&rre->s->rre_receiving_rate));
 
-	rre->i->rre_sending_rate = avg_r_rate;
+	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
 	TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_BM);
 
 	return;
@@ -527,6 +538,7 @@ static inline void tcp_rre_init_monitor_common(struct tcp_sock *tp,
 	if (ack >= (rre->i->rre_ack_r2 +
 		(tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE))) {
 
+		tcp_rre_estimate_granularity(tp, rre);
 		/*
 		* TODO: Do we want to check if sending_rate MUCH LESSER than
 		* received_in_msecs ?
@@ -596,6 +608,11 @@ static inline void tcp_rre_set_init_monitor_sending_rate(
 		LOG_IT(TCP_RRE_LOG_SACK,
 		"Mode: %u. State %u. Sending Rate: %u\n",
 		rre->i->rre_mode, rre->i->rre_state, rre->i->rre_sending_rate);
+
+		LOG_IT(TCP_RRE_LOG_INFO,
+			"Sending rate: %u, una: %u\n",
+			rre->i->rre_sending_rate,
+			tp->snd_una);
 	}
 
 	return;
