@@ -227,6 +227,109 @@ static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 	return changed;
 }
 
+static void tcp_rre_timer_handler(unsigned long data)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+	struct revsw_rre *rre, __rre;
+
+	__rre.s = (struct sess_priv *) data;
+	if (__rre.s == NULL) {
+		LOG_IT(TCP_RRE_LOG_ERR, "%s: ERRORR, data is NULL\n", __func__);
+		return;
+	}
+
+	sk = __rre.s->tsk;
+	if (sk == NULL) {
+		LOG_IT(TCP_RRE_LOG_INFO, "%s: tsk is NULL\n", __func__);
+		return;
+	}
+
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		LOG_IT(TCP_RRE_LOG_INFO, "%s: sk_state != TCP_ESTABLISHED\n",
+			__func__);
+		return;
+	}
+
+	tp = tcp_sk(sk);
+	__rre.i = (struct icsk_priv *) inet_csk_ca(sk);
+	rre = &__rre;
+
+	if (rre->i->rre_bytes_sent_this_leak < rre->i->rre_sending_rate) {
+		LOG_IT(TCP_RRE_LOG_INFO,
+			"** %s: Quota is not fully utilized\n",
+			__func__);
+
+		if (tcp_send_head(sk)) {
+			bh_lock_sock(sk);
+			/* TODO: Should I hold? */
+			sock_hold(sk);
+			if (!sock_owned_by_user(sk)) {
+				tcp_data_snd_check(sk);
+				sk_mem_reclaim(sk);
+			} else {
+				/*
+				 * TODO: delegate our work to tcp_release_cb() ?
+				 * or as socket is being used, is it safe to
+				 * assume xmit will be called and our
+				 * sending_rate is maintained?
+				 */
+			}
+
+			bh_unlock_sock(sk);
+			sock_put(sk);
+		}
+	} else {
+		LOG_IT(TCP_RRE_LOG_INFO,
+			"** %s: In Timer Callback\n",
+			__func__);
+
+	}
+
+	if (tcp_send_head(sk)) {
+		if (mod_timer(&rre->s->rre_timer, jiffies +
+			msecs_to_jiffies(TCP_RRE_MSECS_PER_LEAK))) {
+			/* TODO: Handle error */
+			LOG_IT(TCP_RRE_LOG_ERR,
+				"%s: Error modifying timer\n", __func__);
+		}
+	}
+
+	return;
+}
+
+/*
+ * @tcp_rre_init_timer
+ *
+ */
+static inline int tcp_rre_init_timer(struct revsw_rre *rre, struct sock *sk)
+{
+	if (!rre->s)
+		return -1;
+
+	if (rre->s->tsk == sk)
+		return 0;
+
+	/* TODO: Instead of memset, just set required variables. */
+	memset(&rre->s->rre_timer, 0, sizeof(struct sess_priv));
+	ewma_init(&rre->s->rre_receiving_rate, 1024, 2);
+
+	/*
+	 * Set timer and callback function for maintaining
+	 * sending_rate
+	 */
+	rre->s->tsk = sk;
+	setup_timer(&rre->s->rre_timer, tcp_rre_timer_handler,
+		(unsigned long) &rre->s->rre_timer);
+	if (mod_timer(&rre->s->rre_timer, jiffies +
+		msecs_to_jiffies(TCP_RRE_LEAK_QUOTA_TIMER))) {
+		LOG_IT(TCP_RRE_LOG_ERR,
+			"%s: Error modifying timer\n", __func__);
+	}
+
+	return 0;
+}
+
 /*
  * @tcp_rre_receive_rate
  *
@@ -511,7 +614,8 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 	tcp_rre_receive_rate(tp, rre, ack);
 	TCP_RRE_CALC_TBUFF(tp, rre);
 
-	LOG_IT(TCP_RRE_LOG_INFO, "T %u, Bmax %u, Bmin %u, RDmin %d. r_rate = %u\n",
+	LOG_IT(TCP_RRE_LOG_INFO,
+			"T %u, Bmax %u, Bmin %u, RDmin %d. r_rate = %u\n",
 			rre->s->rre_T,
 			rre->s->rre_Bmax,
 			rre->s->rre_Bmin,
@@ -655,6 +759,11 @@ static void tcp_rre_process_mode_init(struct tcp_sock *tp,
 						struct revsw_rre *rre,
 						u32 ack)
 {
+	/*
+	 * At least by this time the session DB should
+	 * be allocated.
+	 */
+	BUG_ON(tcp_rre_init_timer(rre, (struct sock *) tp) != 0);
 	if (rre->i->rre_ack_r1 == 0)
 		tcp_rre_post_first_valid_ack(tp, rre, ack);
 	else
@@ -802,6 +911,7 @@ static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
 			quota = 0;
 		}
 	} else {
+		BUG_ON(tcp_rre_init_timer(rre, (struct sock *) tp) != 0);
 		/* Next leak */
 		unutilized_time = msecs_to_jiffies((leak_time - 1000) % 1000);
 		rre->i->rre_leak_start_ts = tcp_time_stamp - unutilized_time;
@@ -821,77 +931,6 @@ static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
 	}
 
 	return quota;
-}
-
-static void tcp_rre_timer_handler(unsigned long data)
-{
-	struct sock *sk;
-	struct tcp_sock *tp;
-	struct revsw_rre *rre, __rre;
-
-	__rre.s = (struct sess_priv *) data;
-	if (__rre.s == NULL) {
-		LOG_IT(TCP_RRE_LOG_ERR, "%s: ERRORR, data is NULL\n", __func__);
-		return;
-	}
-
-	sk = __rre.s->tsk;
-	if (sk == NULL) {
-		LOG_IT(TCP_RRE_LOG_INFO, "%s: tsk is NULL\n", __func__);
-		return;
-	}
-
-	if (sk->sk_state != TCP_ESTABLISHED) {
-		LOG_IT(TCP_RRE_LOG_INFO, "%s: sk_state != TCP_ESTABLISHED\n",
-			__func__);
-		return;
-	}
-
-	tp = tcp_sk(sk);
-	__rre.i = (struct icsk_priv *) inet_csk_ca(sk);
-	rre = &__rre;
-
-	if (rre->i->rre_bytes_sent_this_leak < rre->i->rre_sending_rate) {
-		LOG_IT(TCP_RRE_LOG_INFO,
-			"** %s: Quota is not fully utilized\n",
-			__func__);
-
-		if (tcp_send_head(sk)) {
-			bh_lock_sock(sk);
-			/* TODO: Should I hold? */
-			sock_hold(sk);
-			if (!sock_owned_by_user(sk)) {
-				tcp_data_snd_check(sk);
-				sk_mem_reclaim(sk);
-			} else {
-				/*
-				 * TODO: delegate our work to tcp_release_cb() ?
-				 * or as socket is being used, is it safe to
-				 * assume xmit will be called and our
-				 * sending_rate is maintained?
-				 */
-			}
-
-			bh_unlock_sock(sk);
-			sock_put(sk);
-		}
-	} else {
-		LOG_IT(TCP_RRE_LOG_INFO,
-			"** %s: In Timer Callback\n",
-			__func__);
-
-	}
-
-	if (tcp_send_head(sk)) {
-		if (mod_timer(&rre->s->rre_timer, jiffies +
-			msecs_to_jiffies(TCP_RRE_MSECS_PER_LEAK))) {
-			/* TODO: Handle error */
-			LOG_IT(TCP_RRE_LOG_ERR,
-				"%s: Error modifying timer\n", __func__);
-		}
-	}
-
-	return;
 }
 
 /*
@@ -921,29 +960,18 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		 * First time this function is getting called for this socket.
 		 */
 
-		/* TODO: Instead of memset, just set required variables. */
-		memset(&rre->s->rre_timer, 0, sizeof(struct sess_priv));
-
 		rre->i->rre_bytes_sent_this_leak	= 0;
 		rre->i->rre_leak_start_ts		= tcp_time_stamp;
 		rre->i->rre_init_cwnd			= tp->snd_cwnd;
 		rre->i->rre_ack_r2			= tp->snd_una;
 		rre->i->rre_sending_rate = quota = rre->i->rre_init_cwnd * 1448;
 		TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_INIT);
-		ewma_init(&rre->s->rre_receiving_rate, 1024, 2);
 
 		/*
-		 * Set timer and callback function for maintaining
-		 * sending_rate
+		 * If session DB is not yet allocated, timer_init wont happen.
+		 * We will try again later
 		 */
-		rre->s->tsk = sk;
-		setup_timer(&rre->s->rre_timer, tcp_rre_timer_handler,
-			(unsigned long) &rre->s->rre_timer);
-		if (mod_timer(&rre->s->rre_timer, jiffies +
-			msecs_to_jiffies(TCP_RRE_LEAK_QUOTA_TIMER))) {
-			LOG_IT(TCP_RRE_LOG_ERR,
-				"%s: Error modifying timer\n", __func__);
-		}
+		tcp_rre_init_timer(rre, sk);
 
 		LOG_IT(TCP_RRE_LOG_INFO,
 			"Sending Very first packet (%u / %u) and una : %u\n",
@@ -1010,7 +1038,8 @@ static void tcp_rre_release(struct sock *sk)
 	TCP_RRE_PRIVATE_DATE(__rre);
 	rre = &__rre;
 
-	rre->s->tsk = NULL;
+	if (rre->s)
+		rre->s->tsk = NULL;
 	tcp_session_delete(sk);
 
 	LOG_IT(TCP_RRE_LOG_INFO, "%s Exiting\n", __func__);
