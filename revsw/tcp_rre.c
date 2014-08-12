@@ -95,6 +95,7 @@ struct icsk_priv {
 
 	u32 rre_drain_start_ts;
 	u32 rre_syn_ack_tsecr;
+	u32 rre_una;
 	u16 rre_estimated_tick_gra;
 	u8 rre_mode;
 	u8 rre_state;
@@ -698,8 +699,8 @@ static inline void tcp_rre_set_init_monitor_sending_rate(
 			/* TODO: Decrease sending_rate ? */
 			TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK);
 		} else {
-			 /* Exponential growth */
-			rre->i->rre_sending_rate += (2 * tp->mss_cache);
+			rre->i->rre_sending_rate += (2 *
+					(tp->snd_una - rre->i->rre_una));
 			LOG_IT(TCP_RRE_LOG_VERBOSE,
 				"INIT. Exp Growth. Sending Rate: %u\n",
 					rre->i->rre_sending_rate);
@@ -817,6 +818,9 @@ static inline void tcp_rre_common_ack(struct tcp_sock *tp,
 		BUG_ON(1);
 		break;
 	}
+
+	rre->i->rre_una = tp->snd_una;
+	return;
 }
 
 /*
@@ -963,6 +967,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		rre->i->rre_bytes_sent_this_leak	= 0;
 		rre->i->rre_leak_start_ts		= tcp_time_stamp;
 		rre->i->rre_init_cwnd			= tp->snd_cwnd;
+		rre->i->rre_una 			= tp->snd_una;
 		rre->i->rre_ack_r2			= tp->snd_una;
 		rre->i->rre_sending_rate = quota = rre->i->rre_init_cwnd * 1448;
 		TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_INIT);
