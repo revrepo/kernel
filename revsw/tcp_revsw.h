@@ -140,14 +140,17 @@ static inline void tcp_revsw_syn_post_config(struct sock *sk)
 		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, tmp); 
 	}
 
-	/* Hardcoding snd_cwnd. Re-visit and check if we need to make any changes */
-	if (tp->snd_cwnd < 10)
-		tp->snd_cwnd = 10;
-	else if (tp->snd_cwnd > 60)
-		tp->snd_cwnd = 60;
+	/*
+	 * Make sure we have an initial congestion window no less than
+	 * standard TCP but also not too large so as to always result
+	 * in SACKs and retransmissions.
+	 */
+	if (tp->snd_cwnd < REVSW_INIT_CWND_MIN)
+		tp->snd_cwnd = REVSW_INIT_CWND_MIN;
+	else if (tp->snd_cwnd > revsw_max_init_cwnd)
+		tp->snd_cwnd = revsw_max_init_cwnd;
 
 	sk->sk_sndbuf = 3 * tp->snd_wnd;
 }
-
 
 #endif /* __TCP_REVSW_H__ */
