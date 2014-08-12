@@ -30,8 +30,6 @@
 #define REVSW_CONG_WND_MAX      REVSW_INIT_CWND_MAX
 #define REVSW_CONG_WND_DEFAULT  REVSW_CONG_WND_MIN
 
-#define REVSW_RTO_DEFAULT       63
-
 #define REVSW_INIT_CWND_DEFAULT	60
 
 static int revsw_rwnd_mplr_min __read_mostly = REVSW_RWND_MPLR_MIN;
@@ -53,7 +51,6 @@ static int revsw_tcp_session_ttl_max __read_mostly = TCP_SESSION_TTL_MAX;
 int revsw_tcp_session_ttl __read_mostly = TCP_SESSION_TTL_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_session_ttl);
 
-static int revsw_rto __read_mostly = REVSW_RTO_DEFAULT;
 int revsw_tcp_rre_loglevel __read_mostly = REVSW_RRE_LOG_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_rre_loglevel);
 
@@ -104,13 +101,6 @@ static struct ctl_table revsw_ctl_table[] = {
 		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &revsw_cong_wnd_min,
 		.extra2 = &revsw_cong_wnd_max,
-	},
-	{
-		.procname = "revsw_rto",
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.data = &revsw_rto,
-		.proc_handler = &proc_dointvec_ms_jiffies,
 	},
 	{
 		.procname = "revsw_tcp_session_ttl",
