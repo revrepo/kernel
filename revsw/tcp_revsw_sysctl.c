@@ -72,6 +72,9 @@ static int revsw_init_cwnd_max = REVSW_INIT_CWND_MAX;
 int revsw_max_init_cwnd = REVSW_INIT_CWND_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_max_init_cwnd);
 
+int revsw_tcp_increase_rwin_percentage __read_mostly = 0;
+EXPORT_SYMBOL_GPL(revsw_tcp_increase_rwin_percentage);
+
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
 static struct ctl_table revsw_ctl_table[] = {
@@ -151,6 +154,13 @@ static struct ctl_table revsw_ctl_table[] = {
 		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &revsw_init_cwnd_min,
 		.extra2 = &revsw_init_cwnd_max,
+	},
+	{
+		.procname = "revsw_tcp_increase_rwin_percentage",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_tcp_increase_rwin_percentage,
+		.proc_handler = &proc_dointvec,
 	},
 
 	{}

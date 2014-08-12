@@ -1225,6 +1225,14 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		/* No break, continue */
 
 	case TCP_RRE_IGNORE_RCV_WND:
+		if (revsw_tcp_increase_rwin_percentage > 0) {
+			if (TCP_SKB_CB(tcp_send_head(sk))->seq >
+				(tp->snd_una +
+				(tp->snd_wnd + (tp->snd_wnd *
+				revsw_tcp_increase_rwin_percentage/100))))
+				test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+			}
+
 		test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
 		break;
 

@@ -35,6 +35,7 @@ extern int revsw_tcp_test_snd_wnd;
 extern int revsw_packet_size;
 extern int revsw_active_scale;
 extern int revsw_max_init_cwnd;
+extern int revsw_tcp_increase_rwin_percentage;
 
 #endif /* __TCP_REVSW_SYSCTL_H__ */
 
