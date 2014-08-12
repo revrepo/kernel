@@ -27,10 +27,12 @@
  * will take what the user has set.
  */
 #define REVSW_CONG_WND_MIN      0
-#define REVSW_CONG_WND_MAX      200
+#define REVSW_CONG_WND_MAX      REVSW_INIT_CWND_MAX
 #define REVSW_CONG_WND_DEFAULT  REVSW_CONG_WND_MIN
 
 #define REVSW_RTO_DEFAULT       63
+
+#define REVSW_INIT_CWND_DEFAULT	60
 
 static int revsw_rwnd_mplr_min __read_mostly = REVSW_RWND_MPLR_MIN;
 static int revsw_rwnd_mplr_max __read_mostly = REVSW_RWND_MPLR_MAX;
@@ -67,6 +69,11 @@ static int revsw_active_scale_min = REVSW_ACTIVE_SCALE_MIN;
 static int revsw_active_scale_max = REVSW_ACTIVE_SCALE_MAX;
 int revsw_active_scale __read_mostly = REVSW_ACTIVE_SCALE_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_active_scale);
+
+static int revsw_init_cwnd_min = REVSW_INIT_CWND_MIN;
+static int revsw_init_cwnd_max = REVSW_INIT_CWND_MAX;
+int revsw_max_init_cwnd = REVSW_INIT_CWND_DEFAULT;
+EXPORT_SYMBOL_GPL(revsw_max_init_cwnd);
 
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
@@ -145,6 +152,15 @@ static struct ctl_table revsw_ctl_table[] = {
 		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &revsw_active_scale_min,
 		.extra2 = &revsw_active_scale_max,
+	},
+	{
+		.procname = "revsw_max_init_cwnd",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_max_init_cwnd,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_init_cwnd_min,
+		.extra2 = &revsw_init_cwnd_max,
 	},
 
 	{}
