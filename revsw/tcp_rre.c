@@ -1215,6 +1215,7 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 			test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
 		else
 			test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+		break;
 
 	case TCP_RRE_HONOR_NO_REXMIT:
 		if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN ||
@@ -1225,9 +1226,11 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 
 	case TCP_RRE_IGNORE_RCV_WND:
 		test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
+		break;
 
 	case TCP_RRE_HONOR_RCV_WND:
 		test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+		break;
 	}
 
 	if (test_snd_wnd == TCP_RRE_HONOR_RCV_WND) {
