@@ -106,10 +106,12 @@ static u32 tcp_revsw_ssthresh(struct sock *sk)
 	ca->epoch_start = 0;
 
 	/* Wmax and fast convergence */
-	if (tp->snd_cwnd < ca->last_max_cwnd && fast_convergence)
-		ca->last_max_cwnd = (tp->snd_cwnd * (BICTCP_BETA_SCALE + beta))
-		/ (2 * BICTCP_BETA_SCALE);
-	else
+	if (tp->snd_cwnd < ca->last_max_cwnd && fast_convergence) {
+		u32 dividend = tp->snd_cwnd * (BICTCP_BETA_SCALE + beta);
+		u32 divisor = 2 * BICTCP_BETA_SCALE;
+
+		ca->last_max_cwnd = tcp_revsw_division(dividend, divisor);
+	} else
 		ca->last_max_cwnd = tp->snd_cwnd;
 
 	/*
