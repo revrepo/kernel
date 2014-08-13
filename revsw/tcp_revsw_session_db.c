@@ -71,7 +71,6 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 						 work);
 	struct tcp_session_info_hash *thash;
 	__u32 hash;
-	struct timer_list *timer = &(session->cca_priv);
 
 	if (hlist_unhashed(&session->node))
 		return;
@@ -85,7 +84,11 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 	hlist_del(&session->node);
 	thash->entries--;
 	spin_unlock_bh(&thash->lock);
-	del_timer(timer);
+
+	/*
+	 * TODO: Add in a callback function so that the various CCAs that use
+	 * the session database can delete their own data structures at this point.
+	 */
 	kfree(session);
 }
 
