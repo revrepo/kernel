@@ -72,6 +72,8 @@ static int revsw_init_cwnd_max = REVSW_INIT_CWND_MAX;
 int revsw_max_init_cwnd = REVSW_INIT_CWND_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_max_init_cwnd);
 
+static int revsw_rwin_scale_min = REVSW_RWIN_SCALE_MIN;
+static int revsw_rwin_scale_max = REVSW_RWIN_SCALE_MAX;
 int revsw_rwin_scale __read_mostly = 0;
 EXPORT_SYMBOL_GPL(revsw_rwin_scale);
 
@@ -161,6 +163,8 @@ static struct ctl_table revsw_ctl_table[] = {
 		.mode = 0644,
 		.data = &revsw_rwin_scale,
 		.proc_handler = &proc_dointvec,
+		.extra1 = &revsw_rwin_scale_min,
+		.extra2 = &revsw_rwin_scale_max,
 	},
 
 	{}

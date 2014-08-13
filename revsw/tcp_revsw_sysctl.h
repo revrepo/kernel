@@ -26,6 +26,9 @@
 #define REVSW_INIT_CWND_MIN		10
 #define REVSW_INIT_CWND_MAX		100
 
+#define REVSW_RWIN_SCALE_MIN		0
+#define REVSW_RWIN_SCALE_MAX		sizeof(int)
+
 extern int revsw_sm_rcv_wnd;
 extern int revsw_lrg_rcv_wnd;
 extern int revsw_cong_wnd;
