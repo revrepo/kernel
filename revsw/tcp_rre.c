@@ -975,7 +975,8 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	/* Quota: Bytes that can be sent out on wire. */
-	u32 quota;
+	u32 quota, in_flight;
+	int cwnd_quota;
 	struct revsw_rre *rre, __rre;
 
 	TCP_RRE_PRIVATE_DATE(__rre);
@@ -991,7 +992,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		rre->i->rre_bytes_sent_this_leak	= 0;
 		rre->i->rre_leak_start_ts		= tcp_time_stamp;
 		rre->i->rre_init_cwnd			= tp->snd_cwnd;
-		rre->i->rre_una 			= tp->snd_una;
+		rre->i->rre_una				= tp->snd_una;
 		rre->i->rre_ack_r2			= tp->snd_una;
 		rre->i->rre_sending_rate = quota = rre->i->rre_init_cwnd * 1448;
 		TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_INIT);
@@ -1021,14 +1022,11 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		quota = tcp_rre_remaining_leak_quota(tp, rre);
 	}
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE, "Quota: %u, snd_rate %u, BY_sent %u\n",
-				quota, rre->i->rre_sending_rate,
-				rre->i->rre_bytes_sent_this_leak);
-
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
-	" last_sndnxt %u, sndnxt = %u, flight %u and tcp_TS %u\n",
-				rre->i->rre_last_snd_nxt, tp->snd_nxt,
-				tcp_packets_in_flight(tp), tcp_time_stamp);
+		"Quota: %u, snd_rate %u, BY_sent %u last_SN %u, SN = %u\n",
+				quota, rre->i->rre_sending_rate,
+				rre->i->rre_bytes_sent_this_leak,
+				rre->i->rre_last_snd_nxt, tp->snd_nxt);
 
 	rre->i->rre_last_snd_nxt = tp->snd_nxt;
 	/*
@@ -1038,9 +1036,20 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 	 * have to meet pacify the stack are
 	 * (1) it shouldn't be zero (2) It > packets_in_flight.
 	 */
-	tp->snd_cwnd = max(tp->snd_cwnd, tcp_packets_in_flight(tp)+1);
+	cwnd_quota = (int) tcp_revsw_division(quota,
+						max_t(u32, 1, tp->mss_cache));
+	in_flight = tcp_packets_in_flight(tp);
+	tp->snd_cwnd = in_flight + cwnd_quota + 2;
 
-	return (int) tcp_revsw_division(quota, tp->mss_cache);
+
+	LOG_IT(TCP_RRE_LOG_VERBOSE,
+		"cwnd_quota %d, flight %u, cwnd %u ; snd_cwnd %u\n\n",
+		cwnd_quota, in_flight,
+		tcp_revsw_division(rre->i->rre_sending_rate,
+					max_t(u32, 1, tp->mss_cache)),
+					tp->snd_cwnd);
+
+	return cwnd_quota;
 }
 
 /*
@@ -1253,7 +1262,7 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 	case TCP_RRE_IGNORE_RCV_WND:
 		if (revsw_rwin_scale > 0) {
 			delta_win = tp->snd_wnd * tcp_revsw_division(
-					revsw_rwin_scale,100);
+					revsw_rwin_scale, 100);
 			if (TCP_SKB_CB(tcp_send_head(sk))->seq >
 				(tp->snd_una +
 				(tp->snd_wnd + delta_win)))
