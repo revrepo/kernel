@@ -429,8 +429,9 @@ static inline void tcp_rre_fill_buffer(struct tcp_sock *tp,
 	rre->i->rre_drain_start_ts = 0;
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
-				"delta_sending_rate %u and sending_rate = %u\n",
-				delta_sending_rate, rre->i->rre_sending_rate);
+			"%s: delta_sending_rate %u and sending_rate = %u\n",
+			__func__,
+			delta_sending_rate, rre->i->rre_sending_rate);
 	return;
 }
 
@@ -450,8 +451,16 @@ static inline void tcp_rre_drain_buffer(struct tcp_sock *tp,
 				(1000 * (rre->s->rre_T - rre->s->rre_Bmin)),
 				srtt_msecs);
 	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
-	rre->i->rre_sending_rate -= delta_sending_rate;
+	if (delta_sending_rate > rre->i->rre_sending_rate)
+		rre->i->rre_sending_rate = 2 * tp->mss_cache;
+	else
+		rre->i->rre_sending_rate -= delta_sending_rate;
+
 	if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
+		LOG_IT(TCP_RRE_LOG_INFO,
+			"%s: Reduced sending_rate to %u. delta = %u\n",
+			__func__,
+			rre->i->rre_sending_rate, delta_sending_rate);
 		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK);
 	} else {
 		/* Set state to TCP_RRE_STATE_DRAIN */
@@ -462,7 +471,8 @@ static inline void tcp_rre_drain_buffer(struct tcp_sock *tp,
 		rre->i->rre_drain_start_ts = tcp_time_stamp;
 
 	LOG_IT(TCP_RRE_LOG_VERBOSE,
-			"delta_sending_rate %u and sending_rate = %u\n",
+			"%s: delta_sending_rate %u and sending_rate = %u\n",
+			__func__,
 			delta_sending_rate, rre->i->rre_sending_rate);
 	return;
 }
