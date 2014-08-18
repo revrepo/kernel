@@ -112,7 +112,8 @@ struct sess_priv {
 	u32 rre_T;		/* number of bytes. */
 	u32 rre_Bmax;		/* number of bytes. */
 	u32 rre_Bmin;		/* number of bytes. */
-	int rre_RDmin;		/* in ticks */
+	u32 rre_rdmin_tsval;
+	u32 rre_rdmin_tsecr;
 
 	struct ewma rre_receiving_rate;
 	struct sock *tsk;
@@ -476,17 +477,38 @@ static void tcp_rre_process_mode_bm(struct tcp_sock *tp,
 			struct revsw_rre *rre,
 			u32 ack)
 {
-	int tbuff, RD, network_buffer_capacity;
+	int tbuff, RD, network_buffer_capacity, RDmin;
+	u32 tsval_adjusted, in_msecs;
 
 	tcp_rre_receive_rate(tp, rre, ack);
 
-	RD = tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr;
-	if (RD < rre->s->rre_RDmin)
-		rre->s->rre_RDmin = RD;
-	tbuff = RD - rre->s->rre_RDmin;
+	/*
+	 * If the TCP TS granularity of client and server are same,
+	 * RD = tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr;
+	 * AS the granularity may be different we have to
+	 * calculate RD.
+	 */
 
-	/* TODO: We may not need BUG_ON after RRE implementation is complete */
-	BUG_ON(tbuff < 0);
+	RDmin = rre->s->rre_rdmin_tsval - rre->s->rre_rdmin_tsecr;
+
+	TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre,
+			(tp->rx_opt.rcv_tsval - rre->s->rre_rdmin_tsval),
+			in_msecs);
+	tsval_adjusted = rre->s->rre_rdmin_tsval + msecs_to_jiffies(in_msecs);
+
+	RD = tsval_adjusted - tp->rx_opt.rcv_tsecr;
+	if (RD < RDmin) {
+		rre->s->rre_rdmin_tsval = tp->rx_opt.rcv_tsval;
+		rre->s->rre_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
+		RD = RDmin;
+	}
+
+	tbuff = RD - RDmin;
+	if (tbuff < 0) {
+		LOG_IT(TCP_RRE_LOG_ERR,
+			"(BM) tbuff < ZERO\n");
+		return;
+	}
 
 	if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
 		tcp_rre_drain_buffer(tp, rre);
@@ -555,7 +577,8 @@ static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
 	rre->i->rre_ack_r1 = rre->i->rre_ts_r1 = 0;
 	rre->i->rre_ack_r2 = rre->i->rre_ts_r2 = 0;
 	rre->s->rre_T = rre->s->rre_Bmax = rre->s->rre_Bmin = 0;
-	rre->s->rre_RDmin = rre->i->rre_rtt_min = 0;
+	rre->i->rre_rtt_min = 0;
+	rre->s->rre_rdmin_tsval = rre->s->rre_rdmin_tsecr = 0;
 
 	if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
 		LOG_IT(TCP_RRE_LOG_ERR,
@@ -605,8 +628,8 @@ static inline void tcp_rre_post_first_valid_ack(struct tcp_sock *tp,
 							tp->snd_wnd);
 	rre->i->rre_ts_r1	= tp->rx_opt.rcv_tsval;
 	rre->i->rre_ack_r1	= ack;
-	rre->s->rre_RDmin	=
-	(int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
+	rre->s->rre_rdmin_tsval = tp->rx_opt.rcv_tsval;
+	rre->s->rre_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
 	rre->i->rre_ts_r2	= tp->rx_opt.rcv_tsecr;
 	return;
 }
@@ -631,11 +654,10 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 	TCP_RRE_CALC_TBUFF(tp, rre);
 
 	LOG_IT(TCP_RRE_LOG_INFO,
-			"T %u, Bmax %u, Bmin %u, RDmin %d. r_rate = %u\n",
+			"T %u, Bmax %u, Bmin %u, r_rate = %u\n",
 			rre->s->rre_T,
 			rre->s->rre_Bmax,
 			rre->s->rre_Bmin,
-			rre->s->rre_RDmin,
 			(u32) ewma_read(&rre->s->rre_receiving_rate));
 
 	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
@@ -684,8 +706,8 @@ static inline void tcp_rre_init_monitor_common(struct tcp_sock *tp,
 			rre->i->rre_ts_r2  = tp->rx_opt.rcv_tsecr;
 			rre->i->rre_ts_r1  = tp->rx_opt.rcv_tsval;
 			rre->i->rre_ack_r1 = ack;
-			rre->s->rre_RDmin  =
-			(int) (tp->rx_opt.rcv_tsval - tp->rx_opt.rcv_tsecr);
+			rre->s->rre_rdmin_tsval = tp->rx_opt.rcv_tsval;
+			rre->s->rre_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
 			rre->i->rre_ack_r2 = ack;
 			rre->i->rre_sending_rate = rre->i->rre_init_cwnd *
 					       tp->mss_cache;
