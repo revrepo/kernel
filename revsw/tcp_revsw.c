@@ -89,11 +89,14 @@ static u32 tcp_revsw_bw_rtt(const struct sock *sk)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct revsw *w = inet_csk_ca(sk);
 	u32 rtt;
+	u32 tmp;
 
 	/* Rev, go with RTT instead of RTT_min */
 	rtt = w->rtt;
 
-	return max_t(u32, (w->bw_est * rtt) / tp->mss_cache, 2);
+	tmp = tcp_revsw_division((w->bw_est * rtt), tp->mss_cache);
+
+	return max_t(u32, tmp, 2);
 }
 
 static u32 tcp_revsw_ssthresh(struct sock *sk)
