@@ -129,7 +129,7 @@ static inline void tcp_revsw_syn_post_config(struct sock *sk)
 		tp->snd_wnd *= revsw_lrg_rcv_wnd;
 
  	if (revsw_cong_wnd == 0)
-		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, 
+		tp->snd_cwnd = tcp_revsw_division(tp->snd_cwnd,
 						  revsw_packet_size);
 
  	else
