@@ -557,6 +557,13 @@ static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
 	rre->s->rre_T = rre->s->rre_Bmax = rre->s->rre_Bmin = 0;
 	rre->s->rre_RDmin = rre->i->rre_rtt_min = 0;
 
+	if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
+		LOG_IT(TCP_RRE_LOG_ERR,
+			"%s: Session DB not yet allocated\n", __func__);
+		return;
+	}
+
+
 	rre->i->rre_ack_r2	= tp->snd_una;
 	rre->i->rre_state	= TCP_RRE_STATE_INVALID;
 	TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_MONITOR);
@@ -772,7 +779,12 @@ static void tcp_rre_process_mode_init(struct tcp_sock *tp,
 	 * At least by this time the session DB should
 	 * be allocated.
 	 */
-	BUG_ON(tcp_rre_init_timer(rre, (struct sock *) tp) != 0);
+	if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
+		LOG_IT(TCP_RRE_LOG_ERR,
+			"%s: Session DB not yet allocated\n", __func__);
+		return;
+	}
+
 	if (rre->i->rre_ack_r1 == 0)
 		tcp_rre_post_first_valid_ack(tp, rre, ack);
 	else
@@ -923,7 +935,11 @@ static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
 			quota = 0;
 		}
 	} else {
-		BUG_ON(tcp_rre_init_timer(rre, (struct sock *) tp) != 0);
+		if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
+			LOG_IT(TCP_RRE_LOG_ERR,
+			"%s: Session DB not yet allocated\n", __func__);
+			return;
+		}
 		/* Next leak */
 		unutilized_time = msecs_to_jiffies((leak_time - 1000) % 1000);
 		rre->i->rre_leak_start_ts = tcp_time_stamp - unutilized_time;
