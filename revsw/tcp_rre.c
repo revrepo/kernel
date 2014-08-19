@@ -128,10 +128,8 @@ struct revsw_rre {
 	if (revsw_tcp_rre_loglevel && revsw_tcp_rre_loglevel >= loglevel)  { \
 		if (loglevel == TCP_RRE_LOG_ERR)		\
 			pr_err(format, ## __VA_ARGS__);		\
-		else if (loglevel == TCP_RRE_LOG_INFO)		\
-			pr_info(format, ## __VA_ARGS__);	\
 		else						\
-			pr_debug(format, ## __VA_ARGS__);	\
+			pr_info(format, ## __VA_ARGS__);	\
 	}							\
 }
 
