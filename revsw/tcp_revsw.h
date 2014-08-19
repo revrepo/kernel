@@ -99,6 +99,7 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	bool minscheck;
+	unsigned int mss = mss_now;
 
 	if (nonagle & TCP_NAGLE_PUSH)
 		return true;
@@ -110,7 +111,10 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 	minscheck = after(tp->snd_sml, tp->snd_una) &&
 		    !after(tp->snd_sml, tp->snd_nxt);
 
-	if (!((skb->len < revsw_packet_size) && ((nonagle & TCP_NAGLE_CORK) ||
+	if (revsw_disable_nagle_mss)
+		mss = revsw_packet_size;
+
+	if (!((skb->len < mss) && ((nonagle & TCP_NAGLE_CORK) ||
 	    (!nonagle && tp->packets_out && minscheck))))
 		return true;
 
