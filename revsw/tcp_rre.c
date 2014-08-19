@@ -219,7 +219,7 @@ static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 			"--------------> Changing granularity from %u to %u\n",
 			rre->i->rre_estimated_tick_gra, granularity);
 
-		LOG_IT(TCP_RRE_LOG_INFO,
+		LOG_IT(TCP_RRE_LOG_VERBOSE,
 			"%u %u %u %u\n",
 			tcp_time_stamp, rre->i->rre_syn_ack_tsecr,
 			tp->rx_opt.rcv_tsval, tp->rre_syn_tsval);
@@ -316,6 +316,7 @@ static inline int tcp_rre_init_timer(struct revsw_rre *rre, struct sock *sk)
 
 	/* TODO: Instead of memset, just set required variables. */
 	memset(&rre->s->rre_timer, 0, sizeof(struct sess_priv));
+	/* TODO: 1024 and 2, right values? */
 	ewma_init(&rre->s->rre_receiving_rate, 1024, 2);
 
 	/*
@@ -554,7 +555,10 @@ static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
 		if (rre->i->rre_mode != TCP_RRE_MODE_PRE_MONITOR) {
 			TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_PRE_MONITOR);
 			rre->i->rre_sending_rate =
-				max_t(u32, rre->i->rre_sending_rate >> 1, 10);
+				max_t(u32, rre->i->rre_sending_rate >> 1,
+				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+				tp->mss_cache);
+			/* TODO: Reset rre_drain_start_ts ? */
 		}
 		/* Wait until we get ack for all SACKED and LOST packets */
 		return;
@@ -567,14 +571,17 @@ static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
 		 * packets, reset sending_rate.
 		 */
 		rre->i->rre_sending_rate =
-			max_t(u32, rre->i->rre_sending_rate, revsw_cong_wnd);
+			max_t(u32, rre->i->rre_sending_rate,
+				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+				tp->mss_cache);
 	} else {
 		/*
-		 * Recuce sending rate so that we drain network buffers.
+		 * Reduce sending rate so that we drain network buffers.
 		 */
 		rre->i->rre_sending_rate =
 			max_t(u32, rre->i->rre_sending_rate >> 1,
-					revsw_cong_wnd);
+				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+				tp->mss_cache);
 	}
 
 	/*
@@ -615,7 +622,9 @@ static inline void tcp_rre_process_pre_monitor(struct tcp_sock *tp,
 	if (tp->sacked_out > rre->i->rre_last_sacked_out) {
 		/* Got another SACK, reduce sending_rate again */
 		rre->i->rre_sending_rate = max_t(u32,
-					rre->i->rre_sending_rate >> 1, 10);
+				rre->i->rre_sending_rate >> 1,
+				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+				tp->mss_cache);
 	}
 	tcp_rre_receive_rate(tp, rre, ack);
 	tcp_rre_enter_monitor_mode(tp, rre);
@@ -759,8 +768,10 @@ static inline void tcp_rre_set_init_monitor_sending_rate(
 			tcp_rre_fill_buffer(tp, rre);
 
 		LOG_IT(TCP_RRE_LOG_SACK,
-		"Mode: %u. State %u. Sending Rate: %u\n",
-		rre->i->rre_mode, rre->i->rre_state, rre->i->rre_sending_rate);
+			"Mode: %s. State %s. Sending Rate: %u\n",
+			tcp_rre_mode_string[rre->i->rre_mode],
+			tcp_rre_state_string[rre->i->rre_state],
+			rre->i->rre_sending_rate);
 
 		LOG_IT(TCP_RRE_LOG_INFO,
 			"Sending rate: %u, una: %u\n",
@@ -867,7 +878,9 @@ static inline void tcp_rre_common_ack(struct tcp_sock *tp,
 		break;
 
 	default:
-		BUG_ON(1);
+		LOG_IT(TCP_RRE_LOG_ERR,
+				"%s: ERROR!\n", __func__);
+		
 		break;
 	}
 
