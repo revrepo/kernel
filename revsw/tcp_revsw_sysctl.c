@@ -77,6 +77,9 @@ static int revsw_rwin_scale_max = REVSW_RWIN_SCALE_MAX;
 int revsw_rwin_scale __read_mostly = 0;
 EXPORT_SYMBOL_GPL(revsw_rwin_scale);
 
+int revsw_disable_nagle_mss __read_mostly = 0;
+EXPORT_SYMBOL_GPL(revsw_disable_nagle_mss);
+
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
 static struct ctl_table revsw_ctl_table[] = {
@@ -165,6 +168,13 @@ static struct ctl_table revsw_ctl_table[] = {
 		.proc_handler = &proc_dointvec,
 		.extra1 = &revsw_rwin_scale_min,
 		.extra2 = &revsw_rwin_scale_max,
+	},
+	{
+		.procname = "revsw_disable_nagle_mss",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_disable_nagle_mss,
+		.proc_handler = &proc_dointvec,
 	},
 
 	{}

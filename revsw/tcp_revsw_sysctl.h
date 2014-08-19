@@ -39,6 +39,7 @@ extern int revsw_packet_size;
 extern int revsw_active_scale;
 extern int revsw_max_init_cwnd;
 extern int revsw_rwin_scale;
+extern int revsw_disable_nagle_mss;
 
 #endif /* __TCP_REVSW_SYSCTL_H__ */
 
