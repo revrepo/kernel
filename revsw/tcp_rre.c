@@ -165,6 +165,12 @@ struct revsw_rre {
 				1000);	\
 	rre->s->rre_Bmax = rre->s->rre_T + (rre->s->rre_T >> 1); /* t + t/2 */\
 	rre->s->rre_Bmin = rre->s->rre_T - (rre->s->rre_T >> 1); /* t - t/2 */\
+	LOG_IT(TCP_RRE_LOG_INFO,	\
+			"T %u, Bmax %u, Bmin %u, r_rate = %u\n",	\
+			rre->s->rre_T,	\
+			rre->s->rre_Bmax,	\
+			rre->s->rre_Bmin,	\
+			(u32) ewma_read(&rre->s->rre_receiving_rate));	\
 } while (0)
 
 /* TODO: What do we do when rre->i->rre_estimated_tick_gra  is 0 ? */
@@ -188,14 +194,15 @@ static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 
 	/* granularity = msecs past / num of ticks */
 	granularity =
-		jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr) /
-		(tp->rx_opt.rcv_tsval - tp->rre_syn_tsval);
+		tcp_revsw_division(
+		jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr),
+		(tp->rx_opt.rcv_tsval - tp->rre_syn_tsval));
 
-	if (granularity >= 0 && granularity <= 2) {
+	if (granularity >= 0 && granularity < 2) {
 		granularity = 1;
-	} else if (granularity > 2 && granularity <= 6) {
+	} else if (granularity >= 2 && granularity < 6) {
 		granularity = 4;
-	} else if (granularity > 6 && granularity <= 14) {
+	} else if (granularity >= 6 && granularity < 14) {
 		granularity = 10;
 	} else {
 		LOG_IT(TCP_RRE_LOG_ERR,
@@ -214,7 +221,9 @@ static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 			loglevel = TCP_RRE_LOG_INFO;
 
 		LOG_IT(loglevel,
-			"--------------> Changing granularity from %u to %u\n",
+			"--------------> (%u/%u) Changing granularity from %u to %u\n",
+			jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr),
+			(tp->rx_opt.rcv_tsval - tp->rre_syn_tsval),
 			rre->i->rre_estimated_tick_gra, granularity);
 
 		LOG_IT(TCP_RRE_LOG_VERBOSE,
@@ -282,7 +291,7 @@ static void tcp_rre_timer_handler(unsigned long data)
 			sock_put(sk);
 		}
 	} else {
-		LOG_IT(TCP_RRE_LOG_INFO,
+		LOG_IT(TCP_RRE_LOG_VERBOSE,
 			"** %s: In Timer Callback\n",
 			__func__);
 
@@ -670,13 +679,6 @@ static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
 	tcp_rre_receive_rate(tp, rre, ack);
 	TCP_RRE_CALC_TBUFF(tp, rre);
 
-	LOG_IT(TCP_RRE_LOG_INFO,
-			"T %u, Bmax %u, Bmin %u, r_rate = %u\n",
-			rre->s->rre_T,
-			rre->s->rre_Bmax,
-			rre->s->rre_Bmin,
-			(u32) ewma_read(&rre->s->rre_receiving_rate));
-
 	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
 	TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_BM);
 
@@ -1059,7 +1061,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 			 * Enter Monitor Mode. We are in
 			 * BUFFER_DRAIN state for more than 4 RTT
 			 */
-			LOG_IT(TCP_RRE_LOG_INFO, "Enter Monitor Mode");
+			LOG_IT(TCP_RRE_LOG_ERR, "!!Enter Monitor Mode\n");
 			tcp_rre_enter_monitor_mode(tp, rre);
 		}
 		quota = tcp_rre_remaining_leak_quota(tp, rre);
