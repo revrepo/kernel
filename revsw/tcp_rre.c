@@ -28,7 +28,7 @@
  * Number of packets we require in INIT mode or
  * MONITOR mode to calculate receiver rate
  */
-#define TCP_RRE_PACKETS_REQ_CALC_RATE	30
+#define TCP_RRE_PACKETS_REQ_CALC_RATE	20
 
 /* Number of packets we use to calculate tbuff */
 #define TCP_RRE_TBUFF_PACKETS		30
