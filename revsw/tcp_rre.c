@@ -213,14 +213,7 @@ static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 	}
 
 	if (granularity != rre->i->rre_estimated_tick_gra) {
-		int loglevel;
-
-		if (rre->i->rre_estimated_tick_gra)
-			loglevel = TCP_RRE_LOG_ERR;
-		else
-			loglevel = TCP_RRE_LOG_INFO;
-
-		LOG_IT(loglevel,
+		LOG_IT(TCP_RRE_LOG_INFO,
 			"--------------> (%u/%u) Changing granularity from %u to %u\n",
 			jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr),
 			(tp->rx_opt.rcv_tsval - tp->rre_syn_tsval),
@@ -335,6 +328,7 @@ static inline int tcp_rre_init_timer(struct revsw_rre *rre, struct sock *sk)
 		(unsigned long) &rre->s->rre_timer);
 	if (mod_timer(&rre->s->rre_timer, jiffies +
 		msecs_to_jiffies(TCP_RRE_LEAK_QUOTA_TIMER))) {
+		/* TODO: Handle error */
 		LOG_IT(TCP_RRE_LOG_ERR,
 			"%s: Error modifying timer\n", __func__);
 	}
@@ -369,9 +363,9 @@ static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
 	ticks_delta = tp->rx_opt.rcv_tsval - rre->i->rre_ts_r1;
 	TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks_delta, time_in_milisecs);
 	if (time_in_milisecs == 0) {
-		/* TODO */
-		LOG_IT(TCP_RRE_LOG_ERR, "%s: ZERO miliseconds past?????\n\n",
-								__func__);
+		/* TODO: Handle this in some other way? */
+		LOG_IT(TCP_RRE_LOG_INFO, "%s: Network is fast!\n",
+							__func__);
 		return 0;
 	}
 	/* r_rate is in bytes/sec */
@@ -938,7 +932,7 @@ static inline void tcp_rre_handle_fast_ack(struct tcp_sock *tp,
 {
 	if (tp->sacked_out != rre->i->rre_last_sacked_out) {
 		if (tp->sacked_out)
-			LOG_IT(TCP_RRE_LOG_ERR, "sacked_out: fast ack? %u %u\n",
+			LOG_IT(TCP_RRE_LOG_INFO, "sacked_out: fast ack? %u %u\n",
 				tp->sacked_out, rre->i->rre_last_sacked_out);
 
 		LOG_IT(TCP_RRE_LOG_INFO, "last sacked out updated! %u %u",
@@ -1064,7 +1058,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 			 * Enter Monitor Mode. We are in
 			 * BUFFER_DRAIN state for more than 4 RTT
 			 */
-			LOG_IT(TCP_RRE_LOG_ERR, "!!Enter Monitor Mode\n");
+			LOG_IT(TCP_RRE_LOG_INFO, "!!Enter Monitor Mode\n");
 			tcp_rre_enter_monitor_mode(tp, rre);
 		}
 		quota = tcp_rre_remaining_leak_quota(tp, rre);
