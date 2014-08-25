@@ -454,6 +454,9 @@ static inline void tcp_rre_drain_buffer(struct tcp_sock *tp,
 	u32 srtt_msecs;
 	u32 delta_sending_rate; /* per second */
 
+	if (rre->i->rre_state == TCP_RRE_STATE_DRAIN)
+		return;
+
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
 	delta_sending_rate = tcp_revsw_division(
 				(1000 * (rre->s->rre_T - rre->s->rre_Bmin)),
