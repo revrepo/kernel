@@ -15,6 +15,10 @@ cd ../revsw
 
 make ARCH=x86_64 -C ../linux M=$PWD
 
+../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw_sysctl.ko
+../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw_session_db.ko
+../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw.ko
+
 cd ..
 
 # Now package everything together in a tar file
