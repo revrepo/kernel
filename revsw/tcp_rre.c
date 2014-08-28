@@ -963,24 +963,22 @@ static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
 	u32 unutilized_time; /* In that leak */
 
 	leak_time = jiffies_to_msecs(tcp_time_stamp -
-						rre->i->rre_leak_start_ts);
+				     rre->i->rre_leak_start_ts);
+
+	quota = 0;
+
 	if (leak_time <= TCP_RRE_MSECS_PER_LEAK) {
 		/* Still in same leak/drop. */
 		bytes_sent = tp->snd_nxt - rre->i->rre_last_snd_nxt;
 		rre->i->rre_bytes_sent_this_leak += bytes_sent;
-		if (rre->i->rre_bytes_sent_this_leak <
-						rre->i->rre_sending_rate) {
-			/* We can send more data out on wire in this leak */
+		if (rre->i->rre_bytes_sent_this_leak < rre->i->rre_sending_rate)
 			quota = rre->i->rre_sending_rate -
 					rre->i->rre_bytes_sent_this_leak;
-		} else {
-			quota = 0;
-		}
 	} else {
 		if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
 			LOG_IT(TCP_RRE_LOG_ERR,
-			"%s: Session DB not yet allocated\n", __func__);
-			return;
+			       "%s: Session DB not yet allocated\n", __func__);
+			goto exit;
 		}
 		/* Next leak */
 		unutilized_time = msecs_to_jiffies((leak_time - 1000) % 1000);
@@ -1000,6 +998,7 @@ static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
 		quota = rre->i->rre_sending_rate;
 	}
 
+exit:
 	return quota;
 }
 
@@ -1152,7 +1151,6 @@ static u32 tcp_rre_ssthresh(struct sock *sk)
  */
 static void tcp_rre_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
-	tcp_sk(sk)->snd_cwnd + 2;
 }
 
 /*
@@ -1314,7 +1312,7 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
 		break;
 
-	case TCP_RRE_HONOR_RCV_WND:
+	default:
 		test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
 		break;
 	}
