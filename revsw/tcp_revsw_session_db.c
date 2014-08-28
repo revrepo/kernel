@@ -105,15 +105,23 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 	kfree(session);
 }
 
-static void tcp_session_add(struct tcp_sock *tp)
+static void tcp_session_add_work_handler(struct work_struct *work)
 {
-	struct sock *sk = (struct sock *)tp;
-	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force __u32)inet->inet_daddr;
-	__u16 port = (__force __u16)inet->inet_dport;
 	struct tcp_session_info_hash *thash;
 	struct tcp_session_entry *session;
+	const struct inet_sock *inet;
+	struct tcp_sock *tp;
+	struct sock *sk;
 	__u32 hash;
+	__u32 addr;
+	__u16 port;
+
+	tp = container_of(to_delayed_work(work), struct tcp_sock, session_work);
+	sk = (struct sock *)tp;
+	inet = inet_sk(sk);
+
+	addr =  (__force __u32)inet->inet_daddr;
+	port = (__force __u16)inet->inet_dport;
 
 	session = kzalloc(sizeof(*session), GFP_KERNEL);
 	if (!session)
@@ -138,16 +146,7 @@ static void tcp_session_add(struct tcp_sock *tp)
 	tp->session_info = (void *)session;
 }
 
-static void tcp_session_add_work_handler(struct work_struct *work)
-{
-	struct tcp_sock *tp = container_of(to_delayed_work(work),
-					   struct tcp_sock,
-					   session_work);
-
-	tcp_session_add(tp);
-}
-
-void tcp_session_start(struct sock *sk)
+void tcp_session_add(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -155,7 +154,7 @@ void tcp_session_start(struct sock *sk)
 
 	mod_delayed_work(system_wq, &tp->session_work, 0);
 }
-EXPORT_SYMBOL_GPL(tcp_session_start);
+EXPORT_SYMBOL_GPL(tcp_session_add);
 
 void tcp_session_delete(struct sock *sk)
 {

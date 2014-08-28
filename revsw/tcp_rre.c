@@ -1096,7 +1096,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
  */
 static void tcp_rre_init(struct sock *sk)
 {
-	tcp_session_start(sk);
+	tcp_session_add(sk);
 	LOG_IT(TCP_RRE_LOG_INFO, "%s\n", __func__);
 }
 

@@ -29,7 +29,7 @@ struct tcp_session_info {
 	__u8 quota_reached;
 };
 
-extern void tcp_session_start(struct sock *sk);
+extern void tcp_session_add(struct sock *sk);
 extern void tcp_session_delete(struct sock *sk);
 extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
 extern int tcp_session_get_act_cnt(struct sock *sk);

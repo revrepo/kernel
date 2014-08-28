@@ -64,7 +64,7 @@ static void tcp_revsw_init(struct sock *sk)
 	w->ack_cnt = 0;
 	w->tcp_cwnd = 0;
 
-	tcp_session_start(sk);
+	tcp_session_add(sk);
 }
 
 /*
