@@ -29,25 +29,11 @@ struct tcp_session_info {
 	__u8 quota_reached;
 };
 
-struct tcp_session_entry {
-	struct hlist_node node;
-	struct delayed_work work;
-	struct tcp_session_info info;
-	__u32 addr;
-	__u16 port;
-	u32 cca_priv[TCP_CCA_PRIV_UINTS];
-};
-
-struct tcp_session_info_hash {
-	struct hlist_head hlist;
-	spinlock_t lock;
-	__u16 entries;
-	__u16 act_entries;
-};
-
 extern void tcp_session_start(struct sock *sk);
 extern void tcp_session_delete(struct sock *sk);
 extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
 extern int tcp_session_get_act_cnt(struct sock *sk);
+extern struct tcp_session_info *tcp_session_get_info_ptr(struct sock *sk);
+extern u32 *tcp_session_get_cca_priv(struct sock *sk);
 
 #endif /* __TCP_REVSW_SESSION_DB_H__ */

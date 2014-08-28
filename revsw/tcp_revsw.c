@@ -389,8 +389,7 @@ static void tcp_revsw_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 static void tcp_revsw_update_window(struct sock *sk)
 {
 	struct revsw *w = inet_csk_ca(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_session_entry *session = tp->session_info;
+	struct tcp_session_info *info;
 
 	s32 delta = tcp_time_stamp - w->rtt_win_sx;
 
@@ -418,9 +417,10 @@ static void tcp_revsw_update_window(struct sock *sk)
 		w->bk = 0;
 		w->rtt_win_sx = tcp_time_stamp;
 
-		if (session) {
-			session->info.latency = w->rtt;
-			session->info.bandwidth = w->bw_est;
+		info = tcp_session_get_info_ptr(sk);
+		if (info) {
+			info->latency = w->rtt;
+			info->bandwidth = w->bw_est;
 		}
 	}
 }
@@ -546,24 +546,22 @@ static void tcp_revsw_info(struct sock *sk, u32 ext,
 
 static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 {
-	struct tcp_session_entry *session;
  	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_session_info *info;
  
-	session = tp->session_info;
+	info = tcp_session_get_info_ptr(sk);
 
-	if ((session && session->info.quota_reached) || (nwin == 0) ||
+	if ((info && info->quota_reached) || (nwin == 0) ||
 	    (nwin > tp->snd_wnd))
 		tp->snd_wnd = nwin;
 }
 
 static int tcp_revsw_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 {
-	struct tcp_session_entry *session;
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_session_info *info;
 	u32 in_flight, cwnd;
 	u32 quota = 0;
-
-	session = tp->session_info;
 
 	/* Don't be strict about the congestion window for the final FIN.  */
 	if ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
@@ -579,8 +577,9 @@ static int tcp_revsw_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 		goto exit;
 	}
 
-	if (session)
-		session->info.quota_reached = 1;
+	info = tcp_session_get_info_ptr(sk);
+	if (info)
+		info->quota_reached = 1;
 
 exit:
 	return quota;

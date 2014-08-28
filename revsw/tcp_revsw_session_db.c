@@ -16,17 +16,30 @@
 #include "tcp_revsw_session_db.h"
 #include "tcp_revsw_sysctl.h"
 
-static spinlock_t tcpsi_hash_lock;
+struct tcp_session_entry {
+        struct hlist_node node;
+        struct delayed_work work;
+        struct tcp_session_info info;
+        __u32 addr;
+        __u16 port;
+        u32 cca_priv[TCP_CCA_PRIV_UINTS];
+};
+
+struct tcp_session_info_hash {
+        struct hlist_head hlist;
+        spinlock_t lock;
+        __u16 entries;
+        __u16 act_entries;
+};
+
 static struct tcp_session_info_hash *tcpsi_hash;
 
 static int tcp_session_hash_init(void)
 {
 	__u64 i;
 
-	spin_lock_init(&tcpsi_hash_lock);
-
 	tcpsi_hash = kzalloc(TCP_SESSION_HASH_SIZE * sizeof(*tcpsi_hash),
-						 GFP_KERNEL);
+			     GFP_KERNEL);
 	if (!tcpsi_hash)
 		return -ENOMEM;
 
@@ -223,6 +236,38 @@ int tcp_session_get_act_cnt(struct sock *sk)
 	return thash->act_entries;
 }
 EXPORT_SYMBOL_GPL(tcp_session_get_act_cnt);
+
+/*
+ * tcp_session_get_info_ptr
+ *
+ * Returns a pointer to the tcp_session_info data structure inside of the
+ * TCP socket session_info.
+ */
+struct tcp_session_info *tcp_session_get_info_ptr(struct sock *sk)
+{
+	struct tcp_session_entry *session;
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	session = tp->session_info;
+	if (session)
+		return &(session->info);
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(tcp_session_get_info_ptr);
+
+u32 *tcp_session_get_cca_priv(struct sock *sk)
+{
+	struct tcp_session_entry *session;
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	session = tp->session_info;
+	if (session)
+		return session->cca_priv;
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(tcp_session_get_cca_priv);
 
 static int __init tcp_revsw_session_db_register(void)
 {

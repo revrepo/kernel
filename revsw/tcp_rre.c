@@ -150,12 +150,8 @@ struct revsw_rre {
 
 #define TCP_RRE_PRIVATE_DATE(__rre)	\
 {	\
-	struct tcp_session_entry *__session = tcp_sk(sk)->session_info;	\
 	__rre.i = (struct icsk_priv *) inet_csk_ca(sk);	\
-	if (__session)	\
-		__rre.s = (struct sess_priv *) (&(__session->cca_priv)); \
-	else	\
-		__rre.s = NULL;	\
+	__rre.s = (struct sess_priv *) tcp_session_get_cca_priv(sk); \
 }
 
 #define TCP_RRE_CALC_TBUFF(tp, rre)	do { \
