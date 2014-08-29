@@ -17,22 +17,25 @@
 #include "tcp_revsw_sysctl.h"
 
 struct tcp_session_entry {
-        struct hlist_node node;
-        struct delayed_work work;
-        struct tcp_session_info info;
-        __u32 addr;
-        __u16 port;
-        u32 cca_priv[TCP_CCA_PRIV_UINTS];
+	struct hlist_node node;
+	struct delayed_work work;
+	struct tcp_session_info info;
+	struct sock *sk;
+	u32 addr;
+	u16 port;
+	u32 cca_priv[TCP_CCA_PRIV_UINTS];
 };
 
 struct tcp_session_info_hash {
-        struct hlist_head hlist;
-        spinlock_t lock;
-        __u16 entries;
-        __u16 act_entries;
+	struct hlist_head hlist;
+	spinlock_t lock;
+	u16 entries;
+	u16 act_entries;
 };
 
 static struct tcp_session_info_hash *tcpsi_hash;
+
+static struct tcp_session_info_ops *tcpsi_ops[TCP_REVSW_CCA_MAX];
 
 static int tcp_session_hash_init(void)
 {
@@ -83,7 +86,9 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 						 struct tcp_session_entry,
 						 work);
 	struct tcp_session_info_hash *thash;
-	__u32 hash;
+	struct tcp_sock *tp;
+	u32 cca_type;
+	u32 hash;
 
 	if (hlist_unhashed(&session->node))
 		return;
@@ -93,15 +98,17 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 
 	thash = &tcpsi_hash[hash];
 
+	tp = tcp_sk(session->sk);
+	cca_type = *(u32 *)inet_csk_ca(session->sk);
+
 	spin_lock_bh(&thash->lock);
 	hlist_del(&session->node);
 	thash->entries--;
 	spin_unlock_bh(&thash->lock);
 
-	/*
-	 * TODO: Add in a callback function so that the various CCAs that use
-	 * the session database can delete their own data structures at this point.
-	 */
+	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_delete)
+		tcpsi_ops[cca_type]->session_delete(session->sk, &session->info);
+
 	kfree(session);
 }
 
@@ -112,13 +119,15 @@ static void tcp_session_add_work_handler(struct work_struct *work)
 	const struct inet_sock *inet;
 	struct tcp_sock *tp;
 	struct sock *sk;
-	__u32 hash;
+	u32 cca_type;
 	__u32 addr;
 	__u16 port;
+	u32 hash;
 
 	tp = container_of(to_delayed_work(work), struct tcp_sock, session_work);
 	sk = (struct sock *)tp;
 	inet = inet_sk(sk);
+	cca_type = *(u32 *)inet_csk_ca(sk);
 
 	addr =  (__force __u32)inet->inet_daddr;
 	port = (__force __u16)inet->inet_dport;
@@ -127,6 +136,7 @@ static void tcp_session_add_work_handler(struct work_struct *work)
 	if (!session)
 		return;
 
+	session->sk = sk;
 	session->addr = addr;
 	session->port = port;
 	session->info.latency = TCP_SESSION_DEFAULT_LATENCY;
@@ -144,6 +154,9 @@ static void tcp_session_add_work_handler(struct work_struct *work)
 	spin_unlock_bh(&thash->lock);
 
 	tp->session_info = (void *)session;
+
+	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_add)
+		tcpsi_ops[cca_type]->session_add(session->sk, &session->info);
 }
 
 void tcp_session_add(struct sock *sk)
@@ -158,12 +171,16 @@ EXPORT_SYMBOL_GPL(tcp_session_add);
 
 void tcp_session_delete(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
-	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force __u32)inet->inet_daddr;
 	struct tcp_session_info_hash *thash;
 	struct tcp_session_entry *session;
-	__u32 hash;
+	const struct inet_sock *inet;
+	struct tcp_sock *tp;
+	__u32 addr;
+	u32 hash;
+
+	tp = tcp_sk(sk);
+	inet = inet_sk(sk);
+	addr = (__force __u32)inet->inet_daddr;
 
 	session = tp->session_info;
 
@@ -186,9 +203,9 @@ EXPORT_SYMBOL_GPL(tcp_session_delete);
 int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len)
 {
 	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force __u32)(inet->inet_daddr);
-	__u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
-			     TCP_SESSION_HASH_BITS);
+	__u32 addr = (__force u32)(inet->inet_daddr);
+	u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
+			   TCP_SESSION_HASH_BITS);
 	struct tcp_session_info_hash *thash = &tcpsi_hash[hash];
 	struct tcp_session_entry *session;
 	struct tcp_session_info info;
@@ -227,9 +244,9 @@ EXPORT_SYMBOL_GPL(tcp_session_get_info);
 int tcp_session_get_act_cnt(struct sock *sk)
 {
 	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force __u32)(inet->inet_daddr);
-	__u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
-			     TCP_SESSION_HASH_BITS);
+	__u32 addr = (__force u32)(inet->inet_daddr);
+	u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
+			   TCP_SESSION_HASH_BITS);
 	struct tcp_session_info_hash *thash = &tcpsi_hash[hash];
 
 	return thash->act_entries;
@@ -267,6 +284,20 @@ u32 *tcp_session_get_cca_priv(struct sock *sk)
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(tcp_session_get_cca_priv);
+
+void tcp_session_register_ops(u32 cca_type, struct tcp_session_info_ops *ops)
+{
+	if (cca_type < TCP_REVSW_CCA_MAX)
+		tcpsi_ops[cca_type] = ops;
+}
+EXPORT_SYMBOL_GPL(tcp_session_register_ops);
+
+void tcp_session_deregister_ops(u32 cca_type)
+{
+	if (cca_type < TCP_REVSW_CCA_MAX)
+		tcpsi_ops[cca_type] = NULL;
+}
+EXPORT_SYMBOL_GPL(tcp_session_deregister_ops);
 
 static int __init tcp_revsw_session_db_register(void)
 {

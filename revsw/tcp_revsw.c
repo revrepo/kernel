@@ -42,6 +42,7 @@ static void tcp_revsw_init(struct sock *sk)
 {
 	struct revsw *w = inet_csk_ca(sk);
 
+	w->cca_type = TCP_REVSW_CCA_STANDARD;
 	w->bk = 0;
 	w->bw_ns_est = 0;
 	w->bw_est = 0;

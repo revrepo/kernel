@@ -73,6 +73,7 @@ const char *tcp_rre_state_string[TCP_RRE_STATE_UNUSED_MAX] = {
 	};
 
 struct icsk_priv {
+	u32 cca_type;
 	u32 rre_ack_r1;
 	u32 rre_ts_r1;
 	/*
@@ -1096,6 +1097,13 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
  */
 static void tcp_rre_init(struct sock *sk)
 {
+        struct revsw_rre *rre, __rre;
+
+        TCP_RRE_PRIVATE_DATE(__rre);
+        rre = &__rre;
+
+	rre->i->cca_type = TCP_REVSW_CCA_RBE;
+
 	tcp_session_add(sk);
 	LOG_IT(TCP_RRE_LOG_INFO, "%s\n", __func__);
 }

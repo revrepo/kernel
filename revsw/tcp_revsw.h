@@ -15,7 +15,7 @@
 
 /* TCP RevSw structure */
 struct revsw {
-	struct tcp_session_entry *session;
+	u32 cca_type;
 	u32 bw_ns_est;  /* first bandwidth estimation..not smoothed 8) */
 	u32 bw_est;     /* bandwidth estimate */
 	u32 rtt_win_sx; /* here starts a new evaluation... */
