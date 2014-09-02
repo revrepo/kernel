@@ -40,7 +40,7 @@ struct tcp_session_info {
 
 struct tcp_session_info_ops {
 	void (*session_add)(struct sock *sk, struct tcp_session_info *info);
-	void (*session_delete)(struct sock *sk, struct tcp_session_info *info);
+	void (*session_delete)(struct tcp_session_info *info, void *cca_priv);
 };
 
 extern void tcp_session_add(struct sock *sk);

@@ -107,7 +107,8 @@ static void tcp_session_delete_work_handler(struct work_struct *work)
 	spin_unlock_bh(&thash->lock);
 
 	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_delete)
-		tcpsi_ops[cca_type]->session_delete(session->sk, &session->info);
+		tcpsi_ops[cca_type]->session_delete(&session->info,
+						(void *) &session->cca_priv[0]);
 
 	kfree(session);
 }
