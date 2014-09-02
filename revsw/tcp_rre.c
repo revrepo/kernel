@@ -1333,6 +1333,17 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 	}
 }
 
+static void tcp_rbe_session_delete_cb (struct tcp_session_info *info,
+						void *cca_priv)
+{
+	struct sess_priv *s = (struct sess_priv *) cca_priv;
+
+	LOG_IT(TCP_RRE_LOG_VERBOSE, "%s: Cleaning up\n", __func__);
+
+	del_timer(&s->rre_timer);
+	return;
+}
+
 static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.flags		= TCP_CONG_RTT_STAMP,
 	.init		= tcp_rre_init,
@@ -1355,15 +1366,23 @@ static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
 	.name		= "rre"
 };
 
+static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
+	.session_add	= NULL,
+	.session_delete = tcp_rbe_session_delete_cb
+};
+
 static int __init tcp_rre_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct icsk_priv) > ICSK_CA_PRIV_SIZE);
 	BUILD_BUG_ON(sizeof(struct sess_priv) > TCP_CCA_PRIV_SIZE);
+
+	tcp_session_register_ops(TCP_REVSW_CCA_RBE, &tcp_rbe_session_ops);
 	return tcp_register_congestion_control(&tcp_rre_cca);
 }
 
 static void __exit tcp_rre_unregister(void)
 {
+	tcp_session_deregister_ops(TCP_REVSW_CCA_RBE);
 	tcp_unregister_congestion_control(&tcp_rre_cca);
 }
 
