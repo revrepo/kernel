@@ -67,7 +67,7 @@ static int revsw_active_scale_max = REVSW_ACTIVE_SCALE_MAX;
 int revsw_active_scale __read_mostly = REVSW_ACTIVE_SCALE_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_active_scale);
 
-static int revsw_init_cwnd_min = REVSW_INIT_CWND_MIN;
+static int revsw_init_cwnd_min = TCP_INIT_CWND;
 static int revsw_init_cwnd_max = REVSW_INIT_CWND_MAX;
 int revsw_max_init_cwnd = REVSW_INIT_CWND_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_max_init_cwnd);

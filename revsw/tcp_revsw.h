@@ -13,6 +13,8 @@
 #include "tcp_revsw_sysctl.h"
 #include "tcp_revsw_session_db.h"
 
+#define TCP_REVSW_LOCALHOST 0x100007f
+
 /* TCP RevSw structure */
 struct revsw {
 	u32 cca_type;
@@ -125,7 +127,7 @@ static inline void tcp_revsw_syn_post_config(struct sock *sk)
 {
 	int act_cnt = tcp_session_get_act_cnt(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	u32 tmp;
+	const struct inet_sock *inet = inet_sk(sk);
 
 	if (tp->snd_wnd < REVSW_LARGE_RWND_SIZE)
 		tp->snd_wnd *= revsw_sm_rcv_wnd;
@@ -138,20 +140,28 @@ static inline void tcp_revsw_syn_post_config(struct sock *sk)
  	else
 		tp->snd_cwnd = revsw_cong_wnd;
 
-	if (act_cnt) {
-		tmp = tcp_revsw_division(100, revsw_active_scale);
-		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd, tmp); 
-	}
+	/*
+	 * Ensure that the initial congestion window is not larger
+	 * than the configured maximum.
+	 */
+	if (tp->snd_cwnd > revsw_max_init_cwnd)
+		tp->snd_cwnd = revsw_max_init_cwnd;
+
+	/*
+	 * If there are existing active connections to the same IP 
+	 * address then reduce the initial congestion window by the
+	 * configured percentage.  Applies to all ip addresses except
+	 * the TCP_REVSW_LOCALHOST address.
+	 */
+	if (act_cnt && (inet->inet_daddr != TCP_REVSW_LOCALHOST))
+		tp->snd_cwnd /= (100 / revsw_active_scale);
 
 	/*
 	 * Make sure we have an initial congestion window no less than
-	 * standard TCP but also not too large so as to always result
-	 * in SACKs and retransmissions.
+	 * standard TCP.
 	 */
-	if (tp->snd_cwnd < REVSW_INIT_CWND_MIN)
-		tp->snd_cwnd = REVSW_INIT_CWND_MIN;
-	else if (tp->snd_cwnd > revsw_max_init_cwnd)
-		tp->snd_cwnd = revsw_max_init_cwnd;
+	if (tp->snd_cwnd < TCP_INIT_CWND)
+		tp->snd_cwnd = TCP_INIT_CWND;
 
 	sk->sk_sndbuf = 3 * tp->snd_wnd;
 }
