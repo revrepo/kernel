@@ -153,8 +153,9 @@ static inline void tcp_revsw_syn_post_config(struct sock *sk)
 	 * configured percentage.  Applies to all ip addresses except
 	 * the TCP_REVSW_LOCALHOST address.
 	 */
-	if (act_cnt && (inet->inet_daddr != TCP_REVSW_LOCALHOST))
-		tp->snd_cwnd /= (100 / revsw_active_scale);
+	if (act_cnt && (inet->inet_daddr != TCP_REVSW_LOCALHOST) &&
+	    revsw_active_scale) 
+		tp->snd_cwnd = (tp->snd_cwnd * revsw_active_scale) / 100;
 
 	/*
 	 * Make sure we have an initial congestion window no less than
