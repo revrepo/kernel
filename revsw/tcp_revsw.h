@@ -6,6 +6,10 @@
  * some minor tweaks to get better throughput and congestion
  * control.
  *
+ * Copyright (c) 2013-2014, Rev Software, Inc.
+ * All Rights Reserved.
+ * This code is confidential and proprietary to Rev Software, Inc
+ * and may only be used under a license from Rev Software Inc.
  */
 #ifndef __TCP_REVSW_H__
 #define __TCP_REVSW_H__
@@ -14,35 +18,6 @@
 #include "tcp_revsw_session_db.h"
 
 #define TCP_REVSW_LOCALHOST 0x100007f
-
-/* TCP RevSw structure */
-struct revsw {
-	u32 cca_type;
-	u32 bw_ns_est;  /* first bandwidth estimation..not smoothed 8) */
-	u32 bw_est;     /* bandwidth estimate */
-	u32 rtt_win_sx; /* here starts a new evaluation... */
-	u32 bk;
-	u32 snd_una;    /* used for evaluating the number of acked bytes */
-	u32 cumul_ack;
-	u32 accounted;
-	u32 rtt;
-	u32 rtt_min;    /* minimum observed RTT */
-	u8 first_ack;   /* flag which infers that this is the first ack */
-	u8 reset_rtt_min; /* Reset RTT min to next RTT sample*/
-#define ACK_RATIO_SHIFT	4
-#define ACK_RATIO_LIMIT (32u << ACK_RATIO_SHIFT)
-	u32 cnt;        /* increase cwnd by 1 after ACKs */
-	u32 ack_cnt;
-	u32 last_cwnd;
-	u32 last_time;
-	u32 delay_min;
-	u32 epoch_start;
-	u32 bic_K;
-	u32 bic_origin_point;
-	u32 last_max_cwnd;
-	u32 tcp_cwnd;
-	u16 delayed_ack;
-};
 
 #define TCP_REVSW_RTT_MIN   (HZ/20)     /* 50ms */
 #define TCP_REVSW_INIT_RTT  (20*HZ)     /* maybe too conservative?! */

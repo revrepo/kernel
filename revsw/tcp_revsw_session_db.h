@@ -5,8 +5,11 @@
  * This module provides the sysctls that the various RevSw
  * congestion control algortihms and session database require.
  *
+ * Copyright (c) 2013-2014, Rev Software, Inc.
+ * All Rights Reserved.
+ * This code is confidential and proprietary to Rev Software, Inc
+ * and may only be used under a license from Rev Software Inc.
  */
-
 #ifndef __TCP_REVSW_SESSION_DB_H__
 #define __TCP_REVSW_SESSION_DB_H__
 
@@ -31,11 +34,12 @@
 #define TCP_REVSW_CCA_MAX       3
 
 struct tcp_session_info {
-	__u32 version;
-	__u32 cookie;
-	__u32 latency;
-	__u32 bandwidth;
-	__u8 quota_reached;
+	u32 version;
+	u32 cookie;
+	u32 latency;
+	u32 bandwidth;
+	u8 quota_reached;
+	u8 cca_type;
 };
 
 struct tcp_session_info_ops {
@@ -43,7 +47,7 @@ struct tcp_session_info_ops {
 	void (*session_delete)(struct tcp_session_info *info, void *cca_priv);
 };
 
-extern void tcp_session_add(struct sock *sk);
+extern void tcp_session_add(struct sock *sk, u8 cca_type);
 extern void tcp_session_delete(struct sock *sk);
 extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
 extern int tcp_session_get_act_cnt(struct sock *sk);

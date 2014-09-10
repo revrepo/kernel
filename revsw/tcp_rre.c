@@ -4,6 +4,10 @@
  *
  * This is TCP RRE (Receiver Rate Estimation) Implementation.
  *
+ * Copyright (c) 2013-2014, Rev Software, Inc.
+ * All Rights Reserved.
+ * This code is confidential and proprietary to Rev Software, Inc
+ * and may only be used under a license from Rev Software Inc.
  */
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -73,7 +77,6 @@ const char *tcp_rre_state_string[TCP_RRE_STATE_UNUSED_MAX] = {
 	};
 
 struct icsk_priv {
-	u32 cca_type;
 	u32 rre_ack_r1;
 	u32 rre_ts_r1;
 	/*
@@ -1097,14 +1100,7 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
  */
 static void tcp_rre_init(struct sock *sk)
 {
-        struct revsw_rre *rre, __rre;
-
-        TCP_RRE_PRIVATE_DATE(__rre);
-        rre = &__rre;
-
-	rre->i->cca_type = TCP_REVSW_CCA_RBE;
-
-	tcp_session_add(sk);
+	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
 	LOG_IT(TCP_RRE_LOG_INFO, "%s\n", __func__);
 }
 

@@ -5,6 +5,10 @@
  * This module provides the sysctls that the various RevSw
  * congestion control algortihms and session database require.
  *
+ * Copyright (c) 2013-2014, Rev Software, Inc.
+ * All Rights Reserved.
+ * This code is confidential and proprietary to Rev Software, Inc
+ * and may only be used under a license from Rev Software Inc.
  */
 #include <linux/mm.h>
 #include <linux/module.h>
