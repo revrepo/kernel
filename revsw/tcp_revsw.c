@@ -126,7 +126,7 @@ static u32 tcp_revsw_bw_rtt(const struct sock *sk)
 	/* Rev, go with RTT instead of RTT_min */
 	rtt = w->rtt;
 
-	tmp = tcp_revsw_division((w->bw_est * rtt), tp->mss_cache);
+	tmp = (w->bw_est * rtt) / tp->mss_cache;
 
 	return max_t(u32, tmp, 2);
 }
@@ -142,10 +142,8 @@ static u32 tcp_revsw_ssthresh(struct sock *sk)
 
 	/* Wmax and fast convergence */
 	if (tp->snd_cwnd < ca->last_max_cwnd && fast_convergence) {
-		u32 dividend = tp->snd_cwnd * (BICTCP_BETA_SCALE + beta);
-		u32 divisor = 2 * BICTCP_BETA_SCALE;
-
-		ca->last_max_cwnd = tcp_revsw_division(dividend, divisor);
+		ca->last_max_cwnd = tp->snd_cwnd * (BICTCP_BETA_SCALE + beta) /
+				     (2 * BICTCP_BETA_SCALE);
 	} else
 		ca->last_max_cwnd = tp->snd_cwnd;
 

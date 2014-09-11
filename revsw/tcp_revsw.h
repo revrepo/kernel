@@ -31,45 +31,6 @@
 #define HYSTART_ACK_TRAIN		0x1
 #define HYSTART_DELAY			0x2
 
-/*
- * @tcp_revsw_division
- * This function provides a means of performing integer division 
- * without using the division operator.  This is to be used in 
- * function where we may experience bugs complaining about attempts
- * to schedule functions during an atomic action.
- */
-static inline u32 tcp_revsw_division(u32 dividend, u32 divisor)
-{
-	u32 denom = divisor;
-	u32 tmp = 1;
-	u32 answer = 0;
-
-	if (denom > dividend)
-		return 0;
-
-	if (denom == dividend)
-		return 1;
-
-	while (denom <= dividend) {
-		denom <<= 1;
-		tmp <<= 1;
-	}
-
-	denom >>= 1;
-	tmp >>= 1;
-
-	while (tmp != 0) {
-		if (dividend >= denom) {
-			dividend -= denom;
-			answer |= tmp;
-		}
-		tmp >>= 1;
-		denom >>= 1;
-	}
-
-	return answer;
-}
-
 static inline bool
 tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 			    unsigned int mss_now, int nonagle)
@@ -110,8 +71,7 @@ static inline void tcp_revsw_syn_post_config(struct sock *sk)
 		tp->snd_wnd *= revsw_lrg_rcv_wnd;
 
  	if (revsw_cong_wnd == 0)
-		tp->snd_cwnd = tcp_revsw_division(tp->snd_wnd,
-						  revsw_packet_size);
+		tp->snd_cwnd = tp->snd_wnd / revsw_packet_size;
  	else
 		tp->snd_cwnd = revsw_cong_wnd;
 
