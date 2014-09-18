@@ -58,7 +58,7 @@ EXPORT_SYMBOL_GPL(revsw_tcp_session_ttl);
 int revsw_tcp_rre_loglevel __read_mostly = REVSW_RRE_LOG_DEFAULT;
 EXPORT_SYMBOL_GPL(revsw_tcp_rre_loglevel);
 
-int revsw_tcp_test_snd_wnd __read_mostly = 0;
+int revsw_tcp_test_snd_wnd __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_tcp_test_snd_wnd);
 
 static int revsw_packet_size_min = REVSW_PACKET_SIZE_MIN;
@@ -78,10 +78,10 @@ EXPORT_SYMBOL_GPL(revsw_max_init_cwnd);
 
 static int revsw_rwin_scale_min = REVSW_RWIN_SCALE_MIN;
 static int revsw_rwin_scale_max = REVSW_RWIN_SCALE_MAX;
-int revsw_rwin_scale __read_mostly = 0;
+int revsw_rwin_scale __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_rwin_scale);
 
-int revsw_disable_nagle_mss __read_mostly = 0;
+int revsw_disable_nagle_mss __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_disable_nagle_mss);
 
 static struct ctl_table_header *revsw_ctl_table_hdr;

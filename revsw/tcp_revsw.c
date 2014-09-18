@@ -576,9 +576,9 @@ static void tcp_revsw_info(struct sock *sk, u32 ext,
 
 static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 {
- 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_session_info *info;
- 
+
 	info = tcp_session_get_info_ptr(sk);
 
 	if ((info && info->quota_reached) || (nwin == 0) ||
