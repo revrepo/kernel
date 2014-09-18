@@ -5,15 +5,18 @@ NJOBS=`getconf _NPROCESSORS_ONLN`
 cd linux
 
 if [ ! -e .config ]; then
-	cp default_config .config
-	make xconfig || make menuconfig
+	if [ -e default_config ]; then
+		cp default_config .config
+	else
+		make xconfig || make menuconfig
+	fi
 fi
 
 make -j$NJOBS INSTALL_MOD_STRIP=1 deb-pkg
 
 cd ../revsw
 
-make ARCH=x86_64 -C ../linux M=$PWD
+make
 
 ../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw_sysctl.ko
 ../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw_session_db.ko
