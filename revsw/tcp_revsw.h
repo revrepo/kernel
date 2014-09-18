@@ -43,7 +43,8 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 		return true;
 
 	/* Don't use the nagle rule for urgent data (or for the final FIN). */
-	if ((tp->snd_una != tp->snd_up) || (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN))
+	if ((tp->snd_una != tp->snd_up) ||
+	    (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN))
 		return true;
 
 	minscheck = after(tp->snd_sml, tp->snd_una) &&
@@ -59,47 +60,84 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 	return false;
 }
 
-static inline void tcp_revsw_syn_post_config(struct sock *sk)
+static void tcp_revsw_initial_rwn(struct sock *sk, u8 bko_level)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
+	u32 rwn = tp->snd_wnd;
+	u32 multiplier = 1;
+
+	if (rwn < REVSW_LARGE_RWND_SIZE)
+		multiplier = revsw_sm_rcv_wnd;
+	else if (rwn < (REVSW_LARGE_RWND_SIZE * 2))
+		multiplier = revsw_lrg_rcv_wnd;
+
+	if (bko_level)
+		multiplier = 1;
+
+	tp->snd_wnd = rwn * multiplier;
+}
+
+static void tcp_revsw_initial_cwn(struct sock *sk, u8 bko_level)
+{
+	const struct inet_sock *inet = inet_sk(sk);
 	int act_cnt = tcp_session_get_act_cnt(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	const struct inet_sock *inet = inet_sk(sk);
+	u32 rwn = tp->snd_wnd;
+	u32 cwn;
 
-	if (tp->snd_wnd < REVSW_LARGE_RWND_SIZE)
-		tp->snd_wnd *= revsw_sm_rcv_wnd;
-	else if (tp->snd_wnd < (REVSW_LARGE_RWND_SIZE * 2))
-		tp->snd_wnd *= revsw_lrg_rcv_wnd;
-
- 	if (revsw_cong_wnd == 0)
-		tp->snd_cwnd = tp->snd_wnd / revsw_packet_size;
- 	else
-		tp->snd_cwnd = revsw_cong_wnd;
+	if (revsw_cong_wnd == 0)
+		cwn = rwn / revsw_packet_size;
+	else
+		cwn = revsw_cong_wnd;
 
 	/*
 	 * Ensure that the initial congestion window is not larger
 	 * than the configured maximum.
 	 */
-	if (tp->snd_cwnd > revsw_max_init_cwnd)
-		tp->snd_cwnd = revsw_max_init_cwnd;
+	if (cwn > revsw_max_init_cwnd)
+		cwn = revsw_max_init_cwnd;
 
 	/*
-	 * If there are existing active connections to the same IP 
+	 * Make sure to not include this session in the active count
+	 */
+	if (act_cnt)
+		act_cnt--;
+
+	/*
+	 * If there are existing active connections to the same IP
 	 * address then reduce the initial congestion window by the
 	 * configured percentage.  Applies to all ip addresses except
 	 * the TCP_REVSW_LOCALHOST address.
 	 */
 	if (act_cnt && (inet->inet_daddr != TCP_REVSW_LOCALHOST) &&
-	    revsw_active_scale) 
-		tp->snd_cwnd = (tp->snd_cwnd * revsw_active_scale) / 100;
+	    revsw_active_scale)
+		cwn = (cwn * revsw_active_scale) / 100;
+
+	if (bko_level)
+		cwn /= bko_level;
 
 	/*
 	 * Make sure we have an initial congestion window no less than
 	 * standard TCP.
 	 */
-	if (tp->snd_cwnd < TCP_INIT_CWND)
-		tp->snd_cwnd = TCP_INIT_CWND;
+	if (cwn < TCP_INIT_CWND)
+		cwn = TCP_INIT_CWND;
 
-	sk->sk_sndbuf = 3 * tp->snd_wnd;
+	tp->snd_cwnd = cwn;
+}
+
+static inline void tcp_revsw_syn_post_config(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	u8 cca_bko = tcp_session_get_backoff_level(sk);
+	int sndmem = SKB_TRUESIZE(tp->rx_opt.mss_clamp + MAX_TCP_HEADER);
+
+	tcp_revsw_initial_rwn(sk, cca_bko);
+	tcp_revsw_initial_cwn(sk, cca_bko);
+
+	sndmem *= tp->snd_cwnd;
+	if (sk->sk_sndbuf < sndmem)
+		sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
 }
 
 #endif /* __TCP_REVSW_H__ */

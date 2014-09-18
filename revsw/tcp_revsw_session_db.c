@@ -15,6 +15,7 @@
 #include <linux/skbuff.h>
 #include <linux/inet_diag.h>
 #include <linux/hashtable.h>
+#include <linux/list.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
 #include "tcp_revsw_session_db.h"
@@ -22,34 +23,56 @@
 
 #define TCP_SESSION_BLOCK_SIZE	300
 
+#define TCP_SESSION_HASH_BITS	16
+#define TCP_SESSION_KEY_BITMASK	0xFFFF
+#define TCP_SESSION_HASH_SIZE   (1 << TCP_SESSION_HASH_BITS)
+
 /*
  * Data structure used to hold individual session
  * information
  */
 struct tcp_session_entry {
-	struct hlist_node node;
-	struct delayed_work work;
+	u32 cca_priv[TCP_CCA_PRIV_UINTS];
 	struct tcp_session_info info;
 	struct sock *sk;
-	u32 addr;
-	u16 port;
-	u32 cca_priv[TCP_CCA_PRIV_UINTS];
+	u32 total_retrans;
+	u32 total_pkts;
+	u32 rwin;
+	u32 iseq;
 };
 
 /*
- * Data structure to be used for the session
- * info database hash table
+ * Data structure used to hold information regarding
+ * a particular window size's performance
  */
-struct tcp_session_info_hash {
-	struct hlist_head hlist;
-	spinlock_t lock;
-	u16 entries;
-	u16 act_entries;
+struct tcp_session_client_entry {
+	u32 total_retrans;
+	u32 total_pkts;
+	u32 bw_high;
+	u32 bw_low;
+	u32 bw_last;
+	u32 latency_high;
+	u32 latency_low;
+	u32 latency_last;
+	u8 backoff_level;
 };
 
 /*
- * Data structure to be used to hold
- * the pre-allocated session info records
+ * Data structure to be used by all hash lists
+ */
+struct tcp_session_hash_entry {
+	struct hlist_node node;
+	struct timeval tv;
+	u32 addr;
+	union {
+		struct tcp_session_entry session;
+		struct tcp_session_client_entry client[TCP_REVSW_RWIN_MAX];
+	} hdata;
+};
+
+/*
+ * Data structure to hold the pre-allocated
+ * session info records
  */
 struct tcp_session_container {
 	struct hlist_head hlist;
@@ -59,240 +82,493 @@ struct tcp_session_container {
 	u16 entries;
 };
 
-static struct tcp_session_info_hash *tcpsi_hash;
+/*
+ * Data sructure to hold the subpar client list
+ * and the required back off level
+ */
+struct tcp_session_client {
+	struct hlist_head hlist;
+	spinlock_t lock;
+	u16 entries;
+};
 
-static struct tcp_session_container *tcpsi_container;
+/*
+ * Data structure to be used for the connection list
+ */
+struct tcp_session_connection {
+	struct hlist_head hlist;
+	spinlock_t lock;
+	u16 entries;
+};
+
+/*
+ * Data structure to be used for the session
+ * info database hash table
+ */
+struct tcp_session_info_hash {
+	spinlock_t lock;
+	struct tcp_session_connection conn_list;
+	struct tcp_session_client client_list;
+};
+
+static struct tcp_session_container tcpsi_container;
+
+static struct tcp_session_info_hash *tcpsi_hash;
 
 static struct tcp_session_info_ops *tcpsi_ops[TCP_REVSW_CCA_MAX];
 
+/*
+ * tcp_revsw_session_cleanup_hlist
+ */
 static void tcp_revsw_session_cleanup_hlist(struct hlist_head *hlist)
 {
-	struct tcp_session_entry *session;
+	struct tcp_session_hash_entry *entry;
 	struct hlist_node *tnode;
 
 	if (hlist_empty(hlist))
 		return;
 
-	hlist_for_each_entry_safe(session, tnode, hlist, node) {
-		hlist_del(&session->node);
-		cancel_delayed_work_sync(&session->work);
-		kfree(session);
+	hlist_for_each_entry_safe(entry, tnode, hlist, node) {
+		hlist_del(&entry->node);
+		kfree(entry);
 	}
 }
 
-static void tcp_revsw_session_move_to_container(struct work_struct *work)
-{
-	struct tcp_session_info_hash *thash;
-	struct tcp_session_entry *session;
-	u32 cca_type;
-	u32 hash;
+/*********************************************************************
+ * TCP Session Info Container APIs
+ *********************************************************************/
 
-	session = container_of(to_delayed_work(work),
-			       struct tcp_session_entry, work);
-
-	cca_type = session->info.cca_type;
-
-	hash = hash_32((session->addr & TCP_SESSION_KEY_BITMASK),
-		       TCP_SESSION_HASH_BITS);
-
-	thash = &tcpsi_hash[hash];
-
-	spin_lock_bh(&thash->lock);
-	hlist_del(&session->node);
-	thash->entries--;
-	spin_unlock_bh(&thash->lock);
-
-	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_delete) {
-		tcpsi_ops[cca_type]->session_delete(&session->info,
-						(void *) &session->cca_priv[0]);
-	}
-
-	session->sk = NULL;
-	session->addr = 0;
-	session->port = 0;
-	memset(&session->info, 0, sizeof(struct tcp_session_info));
-	memset(session->cca_priv, 0, sizeof(u32) * TCP_CCA_PRIV_UINTS);
-
-	spin_lock_bh(&tcpsi_container->lock);
-	hlist_add_head(&session->node, &tcpsi_container->hlist);
-	tcpsi_container->entries++;
-	spin_unlock_bh(&tcpsi_container->lock);
-}
-
+/*
+ * tcp_revsw_session_allocate_block
+ */
 static void tcp_revsw_session_allocate_block(struct work_struct *work)
 {
-	struct tcp_session_entry *session;
+	struct tcp_session_hash_entry *entry;
 	int i;
 
-	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++) {
-		session = kzalloc(sizeof(*session), GFP_KERNEL);
-		if (!session) {
-			pr_err("%s: Failed to allocate a test entry pointer (%d)\n",
-			       __func__, i);
-			return;
-		}
+	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_KERNEL);
+	BUG_ON(!entry);
 
-		INIT_DELAYED_WORK(&session->work,
-				  tcp_revsw_session_move_to_container);
+	spin_lock_bh(&tcpsi_container.lock);
 
-		spin_lock_bh(&tcpsi_container->lock);
-		hlist_add_head(&session->node, &tcpsi_container->hlist);
-		spin_unlock_bh(&tcpsi_container->lock);
-	}
+	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++)
+		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
 
-	tcpsi_container->entries += TCP_SESSION_BLOCK_SIZE;
+	tcpsi_container.entries += TCP_SESSION_BLOCK_SIZE;
+	spin_unlock_bh(&tcpsi_container.lock);
 }
 
-static struct tcp_session_entry *tcp_revsw_session_get_free_entry(void)
+/*
+ * tcp_revsw_session_get_free_entry
+ */
+static struct tcp_session_hash_entry *tcp_revsw_session_get_free_entry(void)
 {
-	struct tcp_session_entry *session;
+	struct tcp_session_hash_entry *entry;
 
-	spin_lock_bh(&tcpsi_container->lock);
-	session = hlist_entry_safe((tcpsi_container->hlist.first),
-				   struct tcp_session_entry,
-				   node);
+	spin_lock_bh(&tcpsi_container.lock);
+	entry = hlist_entry_safe((tcpsi_container.hlist.first),
+				 struct tcp_session_hash_entry, node);
 
-	hlist_del(&session->node);
-	tcpsi_container->entries--;
-	spin_unlock_bh(&tcpsi_container->lock);
+	hlist_del(&entry->node);
+	tcpsi_container.entries--;
+	spin_unlock_bh(&tcpsi_container.lock);
 
 	/*
 	 * Need to make sure there is always a sufficient
 	 * number of free entries in the container.  Need
 	 * to keep at least 1/3 of the original block size.
 	 */
-	if (tcpsi_container->entries < (TCP_SESSION_BLOCK_SIZE / 3))
-		schedule_delayed_work(&tcpsi_container->work, 0);
+	if (tcpsi_container.entries < (TCP_SESSION_BLOCK_SIZE / 3))
+		schedule_delayed_work(&tcpsi_container.work, 0);
 
-	return session;
+	return entry;
 }
 
-void tcp_session_add(struct sock *sk, u8 cca_type)
+/**************** END TCP Session Info Container APIs ****************/
+
+/*********************************************************************
+ * TCP Session Info Hash APIs
+ *********************************************************************/
+
+/*
+ * tcp_session_get_hash_from_entry
+ */
+static u32 tcp_session_get_hash_from_entry(struct tcp_session_hash_entry *entry)
+{
+	struct tcp_session_entry *session = &entry->hdata.session;
+	const struct inet_sock *inet = inet_sk(session->sk);
+	__u32 addr = (__force __u32)inet->inet_daddr;
+
+	return hash_32((addr & TCP_SESSION_KEY_BITMASK), TCP_SESSION_HASH_BITS);
+}
+
+/*
+ * tcp_session_get_hash_from_sk
+ */
+static u32 tcp_session_get_hash_from_sk(struct sock *sk)
 {
 	const struct inet_sock *inet = inet_sk(sk);
+	__u32 addr = (__force u32)(inet->inet_daddr);
+
+	return hash_32((addr & TCP_SESSION_KEY_BITMASK), TCP_SESSION_HASH_BITS);
+}
+
+/*
+ * tcp_session_add_connection_entry
+ */
+static void
+tcp_session_add_connection_entry(struct tcp_session_hash_entry *entry)
+{
 	struct tcp_session_info_hash *thash;
-	struct tcp_session_entry *session;
-	struct tcp_sock *tp = tcp_sk(sk);
-	__u32 addr;
-	__u16 port;
-	u32 hash;
 
-	addr = (__force __u32)inet->inet_daddr;
-	port = (__force __u16)inet->inet_dport;
-	hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
-				   TCP_SESSION_HASH_BITS);
+	thash = &tcpsi_hash[tcp_session_get_hash_from_entry(entry)];
 
-	session = tcp_revsw_session_get_free_entry();
-	if (!session) {
-		pr_err("%s: Failed to get a free session record\n", __func__);
+	spin_lock_bh(&thash->conn_list.lock);
+	hlist_add_head(&entry->node, &thash->conn_list.hlist);
+	thash->conn_list.entries++;
+	spin_unlock_bh(&thash->conn_list.lock);
+}
+
+/*
+ * tcp_session_delete_connection_entry
+ */
+static void
+tcp_session_delete_connection_entry(struct tcp_session_hash_entry *entry)
+{
+	struct tcp_session_info_hash *thash;
+
+	thash = &tcpsi_hash[tcp_session_get_hash_from_entry(entry)];
+
+	spin_lock_bh(&thash->conn_list.lock);
+	hlist_del(&entry->node);
+	thash->conn_list.entries--;
+	spin_unlock_bh(&thash->conn_list.lock);
+}
+
+/*
+ * tcp_session_update_info
+ */
+static void tcp_session_update_info(struct tcp_session_entry *session,
+				    struct tcp_session_client_entry *client)
+{
+	if (session->info.bandwidth > client->bw_high)
+		client->bw_high = session->info.bandwidth;
+	else if (session->info.bandwidth < client->bw_low)
+		client->bw_low = session->info.bandwidth;
+
+	client->bw_last = session->info.bandwidth;
+
+	if (session->info.latency > client->latency_high)
+		client->latency_high = session->info.latency;
+	else if (session->info.latency < client->latency_low)
+		client->latency_low = session->info.latency;
+
+	client->latency_last = session->info.latency;
+
+	if (session->total_retrans == 0)
 		return;
+
+	client->total_retrans += session->total_retrans;
+	client->total_pkts += session->total_pkts;
+	client->backoff_level = (client->total_retrans * 10) /
+				 client->total_pkts;
+}
+
+/*
+ * tcp_session_update_client
+ */
+static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
+{
+	struct tcp_session_client_entry *client = NULL;
+	struct tcp_session_hash_entry *temp;
+	struct tcp_session_info_hash *thash;
+	struct tcp_session_entry session;
+	struct hlist_node *tnode;
+	u32 backoff_level;
+	u32 rwin;
+
+	thash = &tcpsi_hash[tcp_session_get_hash_from_entry(entry)];
+
+	spin_lock_bh(&thash->client_list.lock);
+
+	backoff_level = TCP_REVSW_BKO_OK;
+
+	rwin = entry->hdata.session.rwin;
+
+	hlist_for_each_entry_safe(temp, tnode, &thash->client_list.hlist,
+				  node) {
+		if (temp->addr == entry->addr) {
+			client = &temp->hdata.client[entry->hdata.session.rwin];
+			break;
+		}
 	}
 
-	session->sk = sk;
-	session->addr = addr;
-	session->port = port;
-	session->info.latency = TCP_SESSION_DEFAULT_LATENCY;
-	session->info.bandwidth = TCP_SESSION_DEFAULT_BW;
-	session->info.cca_type = cca_type;
+	if (!client) {
+		memcpy(&session, &entry->hdata.session, sizeof(session));
+		memset(&entry->hdata.session, 0, sizeof(session));
 
-	thash = &tcpsi_hash[hash];
+		client = &entry->hdata.client[entry->hdata.session.rwin];
 
-	spin_lock_bh(&thash->lock);
-	hlist_add_head(&session->node, &thash->hlist);
-	thash->entries++;
-	thash->act_entries++;
-	spin_unlock_bh(&thash->lock);
+		tcp_session_update_info(&session, client);
 
-	tp->session_info = (void *)session;
+		hlist_add_head(&entry->node, &thash->client_list.hlist);
+		thash->client_list.entries++;
+		spin_unlock_bh(&thash->client_list.lock);
+	} else {
+		tcp_session_update_info(&entry->hdata.session, client);
 
-	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_add)
-		tcpsi_ops[cca_type]->session_add(session->sk, &session->info);
+		spin_unlock_bh(&thash->client_list.lock);
+
+		spin_lock_bh(&tcpsi_container.lock);
+		hlist_add_head(&entry->node, &tcpsi_container.hlist);
+		tcpsi_container.entries++;
+		spin_unlock_bh(&tcpsi_container.lock);
+	}
 }
-EXPORT_SYMBOL_GPL(tcp_session_add);
 
-void tcp_session_delete(struct sock *sk)
+/*
+ * tcp_session_get_act_cnt
+ */
+u16 tcp_session_get_act_cnt(struct sock *sk)
 {
 	const struct inet_sock *inet = inet_sk(sk);
+	__u32 addr = (__force u32)(inet->inet_daddr);
+	struct tcp_session_hash_entry *entry;
+	struct tcp_session_info_hash *thash;
+	struct hlist_node *tnode;
+	u16 cnt = 0;
+
+	thash = &tcpsi_hash[tcp_session_get_hash_from_sk(sk)];
+
+	spin_lock_bh(&thash->conn_list.lock);
+
+	if (hlist_empty(&thash->conn_list.hlist))
+		goto exit;
+
+	hlist_for_each_entry_safe(entry, tnode, &thash->conn_list.hlist, node) {
+		if (entry->addr == addr)
+			cnt++;
+	}
+
+exit:
+	spin_unlock_bh(&thash->conn_list.lock);
+
+	return cnt;
+
+}
+EXPORT_SYMBOL_GPL(tcp_session_get_act_cnt);
+
+/*
+ * tcp_session_get_backoff_level
+ */
+u8 tcp_session_get_backoff_level(struct sock *sk)
+{
+	const struct inet_sock *inet = inet_sk(sk);
+	__u32 addr = (__force u32)(inet->inet_daddr);
+	struct tcp_session_hash_entry *entry;
 	struct tcp_session_info_hash *thash;
 	struct tcp_session_entry *session;
+	u8 bko_level = TCP_REVSW_BKO_OK;
 	struct tcp_sock *tp = tcp_sk(sk);
-	__u32 addr;
-	u32 hash;
+	struct hlist_node *tnode;
 
-	addr = (__force __u32)inet->inet_daddr;
+	thash = &tcpsi_hash[tcp_session_get_hash_from_sk(sk)];
 
 	session = tp->session_info;
-	if (!session)
-		return;
 
-	hash = hash_32((session->addr & TCP_SESSION_KEY_BITMASK),
-		       TCP_SESSION_HASH_BITS);
+	spin_lock_bh(&thash->client_list.lock);
 
-	thash = &tcpsi_hash[hash];
+	if (hlist_empty(&thash->client_list.hlist))
+		goto exit;
 
-	spin_lock_bh(&thash->lock);
-	thash->act_entries--;
-	spin_unlock_bh(&thash->lock);
+	hlist_for_each_entry_safe(entry, tnode, &thash->client_list.hlist,
+				  node) {
+		if (entry->addr == addr) {
+			bko_level =
+			    entry->hdata.client[session->rwin].backoff_level;
+			break;
+		}
+	}
 
-	schedule_delayed_work(&session->work,
-			      msecs_to_jiffies(revsw_tcp_session_ttl * 1000));
+exit:
+	spin_unlock_bh(&thash->client_list.lock);
+
+	return bko_level;
 }
-EXPORT_SYMBOL_GPL(tcp_session_delete);
+EXPORT_SYMBOL_GPL(tcp_session_get_backoff_level);
 
+/********************* TCP Session Info Hash APIs ********************/
+
+/*********************************************************************
+ * Userspace TCP Session Info APIs
+ *********************************************************************/
+
+/*
+ * tcp_session_get_info
+ */
 int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	__u32 addr = (__force u32)(inet->inet_daddr);
+	struct tcp_session_client_entry *client;
+	struct tcp_session_hash_entry *entry;
 	struct tcp_session_info_hash *thash;
 	struct tcp_session_entry *session;
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_session_info info;
-	struct hlist_node *tmp;
-	u32 hash;
-
-	hash = hash_32((addr & TCP_SESSION_KEY_BITMASK), TCP_SESSION_HASH_BITS);
-	thash = &tcpsi_hash[hash];
+	struct hlist_node *tnode;
 
 	info.version = TCP_SESSION_INFO_VERSION;
 	info.cookie = 0;
 	info.latency = TCP_SESSION_DEFAULT_LATENCY;
 	info.bandwidth = TCP_SESSION_DEFAULT_BW;
 
-	if (hlist_empty(&thash->hlist))
-		return -1;
+	thash = &tcpsi_hash[tcp_session_get_hash_from_sk(sk)];
 
-	spin_lock_bh(&thash->lock);
+	session = tp->session_info;
 
-	hlist_for_each_entry_safe(session, tmp, &thash->hlist, node) {
-		if (session->addr == addr) {
-			if ((session->info.latency <= info.latency) &&
-				(session->info.bandwidth >= info.bandwidth)) {
-				info.latency = session->info.latency;
-				info.bandwidth = session->info.bandwidth;
+	spin_lock_bh(&thash->client_list.lock);
+
+	if (hlist_empty(&thash->client_list.hlist))
+		goto exit;
+
+	hlist_for_each_entry_safe(entry, tnode, &thash->client_list.hlist,
+				  node) {
+		if (entry->addr == addr) {
+			client = &entry->hdata.client[session->rwin];
+
+			if (client->backoff_level == TCP_REVSW_BKO_OK) {
+				info.latency = client->latency_high;
+				info.bandwidth = client->bw_high;
+			} else {
+				info.latency = client->latency_low;
+				info.bandwidth = client->bw_low;
 			}
+
+			break;
 		}
 	}
 
-	spin_unlock_bh(&thash->lock);
+exit:
+	spin_unlock_bh(&thash->client_list.lock);
 
 	*len = min(*len, sizeof(info));
-
 	memcpy(data, &info, *len);
 
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tcp_session_get_info);
 
-int tcp_session_get_act_cnt(struct sock *sk)
+/**************** END Userspace TCP Session Info APIs ****************/
+
+/*********************************************************************
+ * TCP Session Info OPs APIs
+ *********************************************************************/
+
+/*
+ * tcp_session_register_ops
+ */
+void tcp_session_register_ops(u32 cca_type, struct tcp_session_info_ops *ops)
+{
+	if (cca_type < TCP_REVSW_CCA_MAX)
+		tcpsi_ops[cca_type] = ops;
+}
+EXPORT_SYMBOL_GPL(tcp_session_register_ops);
+
+/*
+ * tcp_session_deregister_ops
+ */
+void tcp_session_deregister_ops(u32 cca_type)
+{
+	if (cca_type < TCP_REVSW_CCA_MAX)
+		tcpsi_ops[cca_type] = NULL;
+}
+EXPORT_SYMBOL_GPL(tcp_session_deregister_ops);
+
+/********************* TCP Session Info OPs APIs *********************/
+
+/*********************************************************************
+ * TCP Session APIs
+ *********************************************************************/
+
+/*
+ * tcp_session_add
+ */
+void tcp_session_add(struct sock *sk, u8 cca_type)
 {
 	const struct inet_sock *inet = inet_sk(sk);
-	__u32 addr = (__force u32)(inet->inet_daddr);
-	u32 hash = hash_32((addr & TCP_SESSION_KEY_BITMASK),
-					   TCP_SESSION_HASH_BITS);
-	struct tcp_session_info_hash *thash = &tcpsi_hash[hash];
+	struct tcp_session_hash_entry *entry;
+	struct tcp_session_entry *session;
+	struct tcp_sock *tp = tcp_sk(sk);
+	__u32 addr = (__force __u32)inet->inet_daddr;
 
-	return thash->act_entries;
+	entry = tcp_revsw_session_get_free_entry();
+	BUG_ON(!entry);
+
+	entry->addr = addr;
+	session = &entry->hdata.session;
+	session->sk = sk;
+	session->info.latency = TCP_SESSION_DEFAULT_LATENCY;
+	session->info.bandwidth = TCP_SESSION_DEFAULT_BW;
+	session->info.cca_type = cca_type;
+
+	tcp_session_add_connection_entry(entry);
+
+	tp->session_info = (void *)session;
+
+	if (tp->snd_wnd < REVSW_LARGE_RWND_SIZE)
+		session->rwin = TCP_REVSW_RWIN_SM;
+	else if (tp->snd_wnd < (REVSW_LARGE_RWND_SIZE * 2))
+		session->rwin = TCP_REVSW_RWIN_MED;
+	else
+		session->rwin = TCP_REVSW_RWIN_LRG;
+
+	session->iseq = tp->snd_nxt;
+
+	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_add)
+		tcpsi_ops[cca_type]->session_add(sk, &session->info);
 }
-EXPORT_SYMBOL_GPL(tcp_session_get_act_cnt);
+EXPORT_SYMBOL_GPL(tcp_session_add);
+
+/*
+ * tcp_session_delete
+ */
+void tcp_session_delete(struct sock *sk)
+{
+	struct tcp_session_hash_entry *entry;
+	struct tcp_session_entry *session;
+	struct tcp_sock *tp = tcp_sk(sk);
+	u32 cca_type;
+	u32 nbytes;
+
+	session = tp->session_info;
+	cca_type = session->info.cca_type;
+
+	entry = container_of(session, struct tcp_session_hash_entry,
+			     hdata.session);
+
+	tcp_session_delete_connection_entry(entry);
+
+	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_delete) {
+		tcpsi_ops[cca_type]->session_delete(&session->info,
+						(void *) &session->cca_priv[0]);
+	}
+
+	/*
+	 * Update final stats
+	 */
+	session->total_retrans = tp->total_retrans;
+
+	nbytes = tp->snd_nxt - session->iseq;
+
+	if (nbytes > 1448)
+		session->total_pkts = nbytes / 1448;
+	else
+		session->total_pkts = 1;
+
+	tcp_session_update_client(entry);
+}
+EXPORT_SYMBOL_GPL(tcp_session_delete);
 
 /*
  * tcp_session_get_info_ptr
@@ -306,107 +582,104 @@ struct tcp_session_info *tcp_session_get_info_ptr(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	session = tp->session_info;
-	if (session)
-		return &(session->info);
+	BUG_ON(!session);
 
-	return NULL;
+	return &session->info;
 }
 EXPORT_SYMBOL_GPL(tcp_session_get_info_ptr);
 
+/*
+ * tcp_session_get_cca_priv
+ */
 u32 *tcp_session_get_cca_priv(struct sock *sk)
 {
 	struct tcp_session_entry *session;
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	session = tp->session_info;
-	if (session)
-		return session->cca_priv;
+	BUG_ON(!session);
 
-	return NULL;
+	return session->cca_priv;
 }
 EXPORT_SYMBOL_GPL(tcp_session_get_cca_priv);
 
-void tcp_session_register_ops(u32 cca_type, struct tcp_session_info_ops *ops)
-{
-	if (cca_type < TCP_REVSW_CCA_MAX)
-		tcpsi_ops[cca_type] = ops;
-}
-EXPORT_SYMBOL_GPL(tcp_session_register_ops);
+/************************ END TCP Session APIs ***********************/
 
-void tcp_session_deregister_ops(u32 cca_type)
-{
-	if (cca_type < TCP_REVSW_CCA_MAX)
-		tcpsi_ops[cca_type] = NULL;
-}
-EXPORT_SYMBOL_GPL(tcp_session_deregister_ops);
-
+/*
+ * tcp_revsw_session_db_register
+ */
 static int __init tcp_revsw_session_db_register(void)
 {
-	struct tcp_session_entry *session;
+	struct tcp_session_hash_entry *entry;
 	int i;
 
-	tcpsi_container = kzalloc(sizeof(*tcpsi_container), GFP_KERNEL);
-	if (!tcpsi_container) {
-		pr_err("%s: Failed to allocate memory for container\n",
-		       __func__);
-		return -ENOMEM;
-	}
-
-	INIT_HLIST_HEAD(&tcpsi_container->hlist);
-	spin_lock_init(&tcpsi_container->lock);
-	INIT_DELAYED_WORK(&tcpsi_container->work,
+	/*
+	 * Initial all lists, locks, etc for the tcpsi container hash
+	 */
+	INIT_HLIST_HEAD(&tcpsi_container.hlist);
+	spin_lock_init(&tcpsi_container.lock);
+	INIT_DELAYED_WORK(&tcpsi_container.work,
 			  tcp_revsw_session_allocate_block);
 
-	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++) {
-		session = kzalloc(sizeof(*session), GFP_KERNEL);
-		if (!session) {
-			pr_err("%s: Failed to allocate a session record\n",
-			       __func__);
-			goto container_fail;
-		}
+	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_KERNEL);
+	BUG_ON(!entry);
 
-		INIT_DELAYED_WORK(&session->work,
-				  tcp_revsw_session_move_to_container);
+	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++)
+		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
 
-		hlist_add_head(&session->node, &tcpsi_container->hlist);
-		tcpsi_container->entries++;
-	}
+	tcpsi_container.entries = TCP_SESSION_BLOCK_SIZE;
 
+	/*
+	 * Initial all lists, locks, etc for the tcpsi hash
+	 */
 	tcpsi_hash = kzalloc(TCP_SESSION_HASH_SIZE * sizeof(*tcpsi_hash),
 			     GFP_KERNEL);
 
-	if (!tcpsi_hash) {
-		pr_err("%s: Failed to allocate memory for hash table\n", __func__);
+	if (!tcpsi_hash)
 		goto container_fail;
-	}
+
+	spin_lock_init(&tcpsi_hash->lock);
 
 	for (i = 0; i < TCP_SESSION_HASH_SIZE; i++) {
-		spin_lock_init(&tcpsi_hash[i].lock);
-		INIT_HLIST_HEAD(&tcpsi_hash[i].hlist);
+		spin_lock_init(&tcpsi_hash[i].conn_list.lock);
+		INIT_HLIST_HEAD(&tcpsi_hash[i].conn_list.hlist);
+
+		spin_lock_init(&tcpsi_hash[i].client_list.lock);
+		INIT_HLIST_HEAD(&tcpsi_hash[i].client_list.hlist);
 	}
 
 	return 0;
 
 container_fail:
-	tcp_revsw_session_cleanup_hlist(&tcpsi_container->hlist);
-	kfree(tcpsi_container);
+	tcp_revsw_session_cleanup_hlist(&tcpsi_container.hlist);
 
 	return -ENOMEM;
 }
 
+/*
+ * tcp_revsw_session_db_unregister
+ */
 static void __exit tcp_revsw_session_db_unregister(void)
 {
 	int i;
 
-	cancel_delayed_work_sync(&tcpsi_container->work);
-	tcp_revsw_session_cleanup_hlist(&tcpsi_container->hlist);
-	kfree(tcpsi_container);
+	spin_lock_bh(&tcpsi_container.lock);
+	tcp_revsw_session_cleanup_hlist(&tcpsi_container.hlist);
+	spin_unlock_bh(&tcpsi_container.lock);
+
+	spin_lock_bh(&tcpsi_hash->lock);
 
 	for (i = 0; i < TCP_SESSION_HASH_SIZE; i++) {
-		tcp_revsw_session_cleanup_hlist(&tcpsi_hash[i].hlist);
+		spin_lock_bh(&tcpsi_hash[i].conn_list.lock);
+		tcp_revsw_session_cleanup_hlist(&tcpsi_hash[i].conn_list.hlist);
+		spin_unlock_bh(&tcpsi_hash[i].conn_list.lock);
+
+		spin_lock_bh(&tcpsi_hash[i].client_list.lock);
+		tcp_revsw_session_cleanup_hlist(&tcpsi_hash[i].client_list.hlist);
+		spin_unlock_bh(&tcpsi_hash[i].client_list.lock);
 	}
 
-	kfree(tcpsi_hash);
+	spin_unlock_bh(&tcpsi_hash->lock);
 }
 
 module_init(tcp_revsw_session_db_register);
