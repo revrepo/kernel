@@ -117,6 +117,9 @@ static struct tcp_session_info_hash *tcpsi_hash;
 
 static struct tcp_session_info_ops *tcpsi_ops[TCP_REVSW_CCA_MAX];
 
+static struct tcp_session_hash_entry *tcpsi_entry_blocks[1000];
+static int tcpsi_entry_block_cnt;
+
 /*
  * tcp_revsw_session_cleanup_hlist
  */
@@ -150,6 +153,8 @@ static void tcp_revsw_session_allocate_block(struct work_struct *work)
 	BUG_ON(!entry);
 
 	spin_lock_bh(&tcpsi_container.lock);
+
+	tcpsi_entry_blocks[tcpsi_entry_block_cnt++] = entry;
 
 	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++)
 		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
@@ -613,6 +618,8 @@ static int __init tcp_revsw_session_db_register(void)
 	struct tcp_session_hash_entry *entry;
 	int i;
 
+	tcpsi_entry_block_cnt = 0;
+
 	/*
 	 * Initial all lists, locks, etc for the tcpsi container hash
 	 */
@@ -623,6 +630,8 @@ static int __init tcp_revsw_session_db_register(void)
 
 	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_KERNEL);
 	BUG_ON(!entry);
+
+	tcpsi_entry_blocks[tcpsi_entry_block_cnt++] = entry;
 
 	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++)
 		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
@@ -663,23 +672,10 @@ static void __exit tcp_revsw_session_db_unregister(void)
 {
 	int i;
 
-	spin_lock_bh(&tcpsi_container.lock);
-	tcp_revsw_session_cleanup_hlist(&tcpsi_container.hlist);
-	spin_unlock_bh(&tcpsi_container.lock);
+	for (i = 0; i < tcpsi_entry_block_cnt; i++)
+		kfree(tcpsi_entry_blocks[i]);
 
-	spin_lock_bh(&tcpsi_hash->lock);
-
-	for (i = 0; i < TCP_SESSION_HASH_SIZE; i++) {
-		spin_lock_bh(&tcpsi_hash[i].conn_list.lock);
-		tcp_revsw_session_cleanup_hlist(&tcpsi_hash[i].conn_list.hlist);
-		spin_unlock_bh(&tcpsi_hash[i].conn_list.lock);
-
-		spin_lock_bh(&tcpsi_hash[i].client_list.lock);
-		tcp_revsw_session_cleanup_hlist(&tcpsi_hash[i].client_list.hlist);
-		spin_unlock_bh(&tcpsi_hash[i].client_list.lock);
-	}
-
-	spin_unlock_bh(&tcpsi_hash->lock);
+	kfree(tcpsi_hash);
 }
 
 module_init(tcp_revsw_session_db_register);
