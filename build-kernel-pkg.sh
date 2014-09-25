@@ -16,7 +16,7 @@ make -j$NJOBS INSTALL_MOD_STRIP=1 deb-pkg
 
 cd ../revsw
 
-make
+make ARCH=x86_64 -C ../linux M=$PWD
 
 ../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw_sysctl.ko
 ../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 tcp_revsw_session_db.ko
