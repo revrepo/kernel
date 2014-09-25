@@ -152,7 +152,7 @@ static u32 tcp_revsw_ssthresh(struct sock *sk)
 	 *
 	 * (tp->snd_cwnd >> 1U) + (tp->snd_cwnd >> 2U); // 75%
 	 */
-	ssthresh_more = (tp->snd_cwnd * 0.9);
+	ssthresh_more = (tp->snd_cwnd * 90) / 100;
 	ssthresh = tcp_revsw_bw_rtt(sk);
 
 	return max(ssthresh, ssthresh_more);
