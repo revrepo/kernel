@@ -18,7 +18,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
-#include "tcp_revsw.h"
+#include "tcp_revsw_std.h"
 #include "tcp_revsw_sysctl.h"
 #include "tcp_revsw_session_db.h"
 
