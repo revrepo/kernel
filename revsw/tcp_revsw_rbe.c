@@ -1,8 +1,8 @@
 /*
  *
- *   RevSw RRE TCP Congestion Control Algorithm
+ *   RevSw RBE TCP Congestion Control Algorithm
  *
- * This is TCP RRE (Receiver Rate Estimation) Implementation.
+ * This is TCP RBE (Receiver Rate Estimation) Implementation.
  *
  * Copyright (c) 2013-2014, Rev Software, Inc.
  * All Rights Reserved.
@@ -24,7 +24,7 @@
 
 /********************************************************************
  *
- * RevSw RRE Congestion Control Algorithm
+ * RevSw RBE Congestion Control Algorithm
  *
  ********************************************************************/
 
@@ -32,168 +32,168 @@
  * Number of packets we require in INIT mode or
  * MONITOR mode to calculate receiver rate
  */
-#define TCP_RRE_PACKETS_REQ_CALC_RATE	20
+#define TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE	20
 
 /* Number of packets we use to calculate tbuff */
-#define TCP_RRE_TBUFF_PACKETS		30
-#define TCP_RRE_MSECS_PER_LEAK		1000
-#define TCP_RRE_LEAK_QUOTA_TIMER	990
+#define TCP_REVSW_RBE_TBUFF_PACKETS		30
+#define TCP_REVSW_RBE_MSECS_PER_LEAK		1000
+#define TCP_REVSW_RBE_LEAK_QUOTA_TIMER	990
 
-#define TCP_RRE_LOG_NOLOG  REVSW_RRE_LOG_DEFAULT
-#define TCP_RRE_LOG_ERR  (REVSW_RRE_LOG_DEFAULT + 1)
-#define TCP_RRE_LOG_INFO  (REVSW_RRE_LOG_DEFAULT + 2)
-#define TCP_RRE_LOG_SACK  (REVSW_RRE_LOG_DEFAULT + 3)
-#define TCP_RRE_LOG_VERBOSE  (REVSW_RRE_LOG_DEFAULT + 4)
+#define TCP_REVSW_RBE_LOG_NOLOG  TCP_REVSW_RBE_LOG_DEFAULT
+#define TCP_REVSW_RBE_LOG_ERR  (TCP_REVSW_RBE_LOG_DEFAULT + 1)
+#define TCP_REVSW_RBE_LOG_INFO  (TCP_REVSW_RBE_LOG_DEFAULT + 2)
+#define TCP_REVSW_RBE_LOG_SACK  (TCP_REVSW_RBE_LOG_DEFAULT + 3)
+#define TCP_REVSW_RBE_LOG_VERBOSE  (TCP_REVSW_RBE_LOG_DEFAULT + 4)
 
-#define TCP_RRE_MODE_INVALID  0
-#define TCP_RRE_MODE_INIT  (TCP_RRE_MODE_INVALID + 1)
-#define TCP_RRE_MODE_BM  (TCP_RRE_MODE_INVALID + 2)
-#define TCP_RRE_MODE_PRE_MONITOR  (TCP_RRE_MODE_INVALID + 3)
-#define TCP_RRE_MODE_MONITOR  (TCP_RRE_MODE_INVALID + 4)
-#define TCP_RRE_MODE_UNUSED_MAX	(TCP_RRE_MODE_INVALID + 5)
+#define TCP_REVSW_RBE_MODE_INVALID  0
+#define TCP_REVSW_RBE_MODE_INIT  (TCP_REVSW_RBE_MODE_INVALID + 1)
+#define TCP_REVSW_RBE_MODE_BM  (TCP_REVSW_RBE_MODE_INVALID + 2)
+#define TCP_REVSW_RBE_MODE_PRE_MONITOR  (TCP_REVSW_RBE_MODE_INVALID + 3)
+#define TCP_REVSW_RBE_MODE_MONITOR  (TCP_REVSW_RBE_MODE_INVALID + 4)
+#define TCP_REVSW_RBE_MODE_UNUSED_MAX	(TCP_REVSW_RBE_MODE_INVALID + 5)
 
-#define TCP_RRE_STATE_INVALID  0
-#define TCP_RRE_STATE_FILL  (TCP_RRE_STATE_INVALID + 1)
-#define TCP_RRE_STATE_DRAIN  (TCP_RRE_STATE_INVALID + 2)
-#define TCP_RRE_STATE_FORCE_DRAIN  (TCP_RRE_STATE_INVALID + 3)
-#define TCP_RRE_STATE_SACK  (TCP_RRE_STATE_INVALID + 4)
-#define TCP_RRE_STATE_SACK_DONE  (TCP_RRE_STATE_INVALID + 5)
-#define TCP_RRE_STATE_UNUSED_MAX  (TCP_RRE_STATE_INVALID + 6)
+#define TCP_REVSW_RBE_STATE_INVALID  0
+#define TCP_REVSW_RBE_STATE_FILL  (TCP_REVSW_RBE_STATE_INVALID + 1)
+#define TCP_REVSW_RBE_STATE_DRAIN  (TCP_REVSW_RBE_STATE_INVALID + 2)
+#define TCP_REVSW_RBE_STATE_FORCE_DRAIN  (TCP_REVSW_RBE_STATE_INVALID + 3)
+#define TCP_REVSW_RBE_STATE_SACK  (TCP_REVSW_RBE_STATE_INVALID + 4)
+#define TCP_REVSW_RBE_STATE_SACK_DONE  (TCP_REVSW_RBE_STATE_INVALID + 5)
+#define TCP_REVSW_RBE_STATE_UNUSED_MAX  (TCP_REVSW_RBE_STATE_INVALID + 6)
 
-#define TCP_RRE_HONOR_RCV_WND 0
-#define TCP_RRE_IGNORE_INIT_BURST (TCP_RRE_HONOR_RCV_WND + 1)
-#define TCP_RRE_HONOR_NO_REXMIT (TCP_RRE_HONOR_RCV_WND + 2)
-#define TCP_RRE_IGNORE_RCV_WND (TCP_RRE_HONOR_RCV_WND + 3)
+#define TCP_REVSW_RBE_HONOR_RCV_WND 0
+#define TCP_REVSW_RBE_IGNORE_INIT_BURST (TCP_REVSW_RBE_HONOR_RCV_WND + 1)
+#define TCP_REVSW_RBE_HONOR_NO_REXMIT (TCP_REVSW_RBE_HONOR_RCV_WND + 2)
+#define TCP_REVSW_RBE_IGNORE_RCV_WND (TCP_REVSW_RBE_HONOR_RCV_WND + 3)
 
-const char *tcp_rre_mode_string[TCP_RRE_MODE_UNUSED_MAX] = {
-	"TCP_RRE_MODE_INVALID", "TCP_RRE_MODE_INIT", "TCP_RRE_MODE_BM",
-	"TCP_RRE_MODE_PRE_MONITOR", "TCP_RRE_MODE_MONITOR"
+const char *tcp_revsw_rbe_mode_string[TCP_REVSW_RBE_MODE_UNUSED_MAX] = {
+	"TCP_REVSW_RBE_MODE_INVALID", "TCP_REVSW_RBE_MODE_INIT", "TCP_RBE_MODE_BM",
+	"TCP_REVSW_RBE_MODE_PRE_MONITOR", "TCP_REVSW_RBE_MODE_MONITOR"
 	};
 
-const char *tcp_rre_state_string[TCP_RRE_STATE_UNUSED_MAX] = {
-	"TCP_RRE_STATE_INVALID", "TCP_RRE_STATE_FILL", "TCP_RRE_STATE_DRAIN",
-	"TCP_RRE_STATE_FORCE_DRAIN", "TCP_RRE_STATE_SACK",
-	"TCP_RRE_STATE_SACK_DONE"
+const char *tcp_revsw_rbe_state_string[TCP_REVSW_RBE_STATE_UNUSED_MAX] = {
+	"TCP_REVSW_RBE_STATE_INVALID", "TCP_REVSW_RBE_STATE_FILL", "TCP_RBE_STATE_DRAIN",
+	"TCP_REVSW_RBE_STATE_FORCE_DRAIN", "TCP_REVSW_RBE_STATE_SACK",
+	"TCP_REVSW_RBE_STATE_SACK_DONE"
 	};
 
 struct icsk_priv {
-	u32 rre_ack_r1;
-	u32 rre_ts_r1;
+	u32 rbe_ack_r1;
+	u32 rbe_ts_r1;
 	/*
 	 * The following 2 variables are overloaded.
 	 * They are used differnetly in INIT/BM modes
 	 */
-	u32 rre_ack_r2;
-	u32 rre_ts_r2;
+	u32 rbe_ack_r2;
+	u32 rbe_ts_r2;
 
-	u32 rre_last_snd_nxt;
-	u32 rre_leak_start_ts;
-	u32 rre_bytes_sent_this_leak;
-	u32 rre_sending_rate;	/*  sending_rate is in bytes/sec */
+	u32 rbe_last_snd_nxt;
+	u32 rbe_leak_start_ts;
+	u32 rbe_bytes_sent_this_leak;
+	u32 rbe_sending_rate;	/*  sending_rate is in bytes/sec */
 
-	u32 rre_rtt_min;	/* in miliseconds */
+	u32 rbe_rtt_min;	/* in miliseconds */
 
-	u32 rre_init_cwnd;
-	u32 rre_last_sacked_out;
-	u32 rre_sack_time_stamp;
+	u32 rbe_init_cwnd;
+	u32 rbe_last_sacked_out;
+	u32 rbe_sack_time_stamp;
 
-	u32 rre_drain_start_ts;
-	u32 rre_syn_ack_tsecr;
-	u32 rre_una;
-	u16 rre_estimated_tick_gra;
-	u8 rre_mode;
-	u8 rre_state;
+	u32 rbe_drain_start_ts;
+	u32 rbe_syn_ack_tsecr;
+	u32 rbe_una;
+	u16 rbe_estimated_tick_gra;
+	u8 rbe_mode;
+	u8 rbe_state;
 };
 
 struct sess_priv {
-	/* rre_timer has to be first item */
+	/* rbe_timer has to be first item */
 	/*
 	 * TODO: Check if we can use any existing timer in scoket
 	 * which will some memory
 	 */
-	struct timer_list rre_timer;
+	struct timer_list rbe_timer;
 
-	u32 rre_T;		/* number of bytes. */
-	u32 rre_Bmax;		/* number of bytes. */
-	u32 rre_Bmin;		/* number of bytes. */
-	u32 rre_rdmin_tsval;
-	u32 rre_rdmin_tsecr;
+	u32 rbe_T;		/* number of bytes. */
+	u32 rbe_Bmax;		/* number of bytes. */
+	u32 rbe_Bmin;		/* number of bytes. */
+	u32 rbe_rdmin_tsval;
+	u32 rbe_rdmin_tsecr;
 
-	struct ewma rre_receiving_rate;
+	struct ewma rbe_receiving_rate;
 	struct sock *tsk;
 };
 
-struct revsw_rre {
+struct revsw_rbe {
 	struct icsk_priv *i;
 	struct sess_priv *s;
 };
 
 #define LOG_IT(loglevel, format, ...)  { \
-	if (revsw_tcp_rre_loglevel && revsw_tcp_rre_loglevel >= loglevel)  { \
-		if (loglevel == TCP_RRE_LOG_ERR)		\
+	if (tcp_revsw_rbe_loglevel && tcp_revsw_rbe_loglevel >= loglevel)  { \
+		if (loglevel == TCP_REVSW_RBE_LOG_ERR)		\
 			pr_err(format, ## __VA_ARGS__);		\
 		else						\
 			pr_info(format, ## __VA_ARGS__);	\
 	}							\
 }
 
-#define TCP_RRE_SET_STATE(rre, state)  { \
-	if (rre->i->rre_state != state)	\
-		LOG_IT(TCP_RRE_LOG_INFO, "	%s to %s\n", \
-			tcp_rre_state_string[rre->i->rre_state],	\
-			tcp_rre_state_string[state]);	\
-	rre->i->rre_state = state;	\
+#define TCP_REVSW_RBE_SET_STATE(rbe, state)  { \
+	if (rbe->i->rbe_state != state)	\
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "	%s to %s\n", \
+			tcp_revsw_rbe_state_string[rbe->i->rbe_state],	\
+			tcp_revsw_rbe_state_string[state]);	\
+	rbe->i->rbe_state = state;	\
 }
 
-#define TCP_RRE_SET_MODE(rre, mode)  { \
-	LOG_IT(TCP_RRE_LOG_INFO, "	%s to %s\n", \
-			tcp_rre_mode_string[rre->i->rre_mode],	\
-			tcp_rre_mode_string[mode]);	\
-	rre->i->rre_mode = mode;	\
+#define TCP_REVSW_RBE_SET_MODE(rbe, mode)  { \
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "	%s to %s\n", \
+			tcp_revsw_rbe_mode_string[rbe->i->rbe_mode],	\
+			tcp_revsw_rbe_mode_string[mode]);	\
+	rbe->i->rbe_mode = mode;	\
 }
 
-#define TCP_RRE_PRIVATE_DATE(__rre)	\
+#define TCP_REVSW_RBE_PRIVATE_DATE(__rbe)	\
 {	\
-	__rre.i = (struct icsk_priv *) inet_csk_ca(sk);	\
-	__rre.s = (struct sess_priv *) tcp_session_get_cca_priv(sk); \
+	__rbe.i = (struct icsk_priv *) inet_csk_ca(sk);	\
+	__rbe.s = (struct sess_priv *) tcp_session_get_cca_priv(sk); \
 }
 
-#define TCP_RRE_CALC_TBUFF(tp, rre)	do { \
-	rre->s->rre_T = (u32)ewma_read(&rre->s->rre_receiving_rate) * \
-			rre->i->rre_rtt_min / 1000; \
-	rre->s->rre_Bmax = rre->s->rre_T + (rre->s->rre_T >> 1); /* t + t/2 */\
-	rre->s->rre_Bmin = rre->s->rre_T - (rre->s->rre_T >> 1); /* t - t/2 */\
-	LOG_IT(TCP_RRE_LOG_INFO,	\
+#define TCP_REVSW_RBE_CALC_TBUFF(tp, rbe)	do { \
+	rbe->s->rbe_T = (u32)ewma_read(&rbe->s->rbe_receiving_rate) * \
+			rbe->i->rbe_rtt_min / 1000; \
+	rbe->s->rbe_Bmax = rbe->s->rbe_T + (rbe->s->rbe_T >> 1); /* t + t/2 */\
+	rbe->s->rbe_Bmin = rbe->s->rbe_T - (rbe->s->rbe_T >> 1); /* t - t/2 */\
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO,	\
 			"T %u, Bmax %u, Bmin %u, r_rate = %u\n",	\
-			rre->s->rre_T,	\
-			rre->s->rre_Bmax,	\
-			rre->s->rre_Bmin,	\
-			(u32) ewma_read(&rre->s->rre_receiving_rate));	\
+			rbe->s->rbe_T,	\
+			rbe->s->rbe_Bmax,	\
+			rbe->s->rbe_Bmin,	\
+			(u32) ewma_read(&rbe->s->rbe_receiving_rate));	\
 } while (0)
 
-/* TODO: What do we do when rre->i->rre_estimated_tick_gra  is 0 ? */
-#define TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks, in_msecs)	do { \
-	if (rre->i->rre_estimated_tick_gra > 0)	\
-		in_msecs = (ticks * rre->i->rre_estimated_tick_gra);	\
+/* TODO: What do we do when rbe->i->rbe_estimated_tick_gra  is 0 ? */
+#define TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, ticks, in_msecs)	do { \
+	if (rbe->i->rbe_estimated_tick_gra > 0)	\
+		in_msecs = (ticks * rbe->i->rbe_estimated_tick_gra);	\
 	else	\
 		in_msecs = jiffies_to_msecs(ticks);	\
 } while (0)
 
 /*
- * @tcp_rre_estimate_granularity
+ * @tcp_revsw_rbe_estimate_granularity
  *
  * Estimate client's TCP timestamp granulairty as
  * it is required to calculate the receiving rate.
  */
-static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
-						struct revsw_rre *rre)
+static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
+						struct revsw_rbe *rbe)
 {
 	int granularity, changed = 0;
 
 	/* granularity = msecs past / num of ticks */
 	granularity =
-		jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr) /
-		 (tp->rx_opt.rcv_tsval - tp->rre_syn_tsval);
+		jiffies_to_msecs(tcp_time_stamp - rbe->i->rbe_syn_ack_tsecr) /
+		 (tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval);
 
 	if (granularity >= 0 && granularity < 2) {
 		granularity = 1;
@@ -202,62 +202,62 @@ static inline int tcp_rre_estimate_granularity(struct tcp_sock *tp,
 	} else if (granularity >= 6 && granularity < 14) {
 		granularity = 10;
 	} else {
-		LOG_IT(TCP_RRE_LOG_ERR,
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			"Wrong previous Estimation of Client TCP Granularity."
-			" Current Estimation: %u. Previous Estimation: %u\n",
-				granularity, rre->i->rre_estimated_tick_gra);
+			" Curbent Estimation: %u. Previous Estimation: %u\n",
+				granularity, rbe->i->rbe_estimated_tick_gra);
 		granularity = 0;
 	}
 
-	if (granularity != rre->i->rre_estimated_tick_gra) {
-		LOG_IT(TCP_RRE_LOG_INFO,
+	if (granularity != rbe->i->rbe_estimated_tick_gra) {
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 		  "--------------> (%u/%u) Changing granularity from %u to %u\n",
-		  jiffies_to_msecs(tcp_time_stamp - rre->i->rre_syn_ack_tsecr),
-		  (tp->rx_opt.rcv_tsval - tp->rre_syn_tsval),
-		  rre->i->rre_estimated_tick_gra, granularity);
+		  jiffies_to_msecs(tcp_time_stamp - rbe->i->rbe_syn_ack_tsecr),
+		  (tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval),
+		  rbe->i->rbe_estimated_tick_gra, granularity);
 
-		LOG_IT(TCP_RRE_LOG_VERBOSE,
+		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 			"%u %u %u %u\n",
-			tcp_time_stamp, rre->i->rre_syn_ack_tsecr,
-			tp->rx_opt.rcv_tsval, tp->rre_syn_tsval);
+			tcp_time_stamp, rbe->i->rbe_syn_ack_tsecr,
+			tp->rx_opt.rcv_tsval, tp->rbe_syn_tsval);
 
-		rre->i->rre_estimated_tick_gra = granularity;
+		rbe->i->rbe_estimated_tick_gra = granularity;
 		changed = 1;
 	}
 
 	return changed;
 }
 
-static void tcp_rre_timer_handler(unsigned long data)
+static void tcp_revsw_rbe_timer_handler(unsigned long data)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	__rre.s = (struct sess_priv *) data;
-	if (__rre.s == NULL) {
-		LOG_IT(TCP_RRE_LOG_ERR, "%s: ERRORR, data is NULL\n", __func__);
+	__rbe.s = (struct sess_priv *) data;
+	if (__rbe.s == NULL) {
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR, "%s: ERRORR, data is NULL\n", __func__);
 		return;
 	}
 
-	sk = __rre.s->tsk;
+	sk = __rbe.s->tsk;
 	if (sk == NULL) {
-		LOG_IT(TCP_RRE_LOG_INFO, "%s: tsk is NULL\n", __func__);
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s: tsk is NULL\n", __func__);
 		return;
 	}
 
 	if (sk->sk_state != TCP_ESTABLISHED) {
-		LOG_IT(TCP_RRE_LOG_INFO, "%s: sk_state != TCP_ESTABLISHED\n",
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s: sk_state != TCP_ESTABLISHED\n",
 			__func__);
 		return;
 	}
 
 	tp = tcp_sk(sk);
-	__rre.i = (struct icsk_priv *) inet_csk_ca(sk);
-	rre = &__rre;
+	__rbe.i = (struct icsk_priv *) inet_csk_ca(sk);
+	rbe = &__rbe;
 
-	if (rre->i->rre_bytes_sent_this_leak < rre->i->rre_sending_rate) {
-		LOG_IT(TCP_RRE_LOG_INFO,
+	if (rbe->i->rbe_bytes_sent_this_leak < rbe->i->rbe_sending_rate) {
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 			"** %s: Quota is not fully utilized\n",
 			__func__);
 
@@ -281,50 +281,50 @@ static void tcp_rre_timer_handler(unsigned long data)
 			sock_put(sk);
 		}
 	} else {
-		LOG_IT(TCP_RRE_LOG_VERBOSE,
+		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 			"** %s: In Timer Callback\n",
 			__func__);
 
 	}
 
 	if (tcp_send_head(sk)) {
-		if (mod_timer(&rre->s->rre_timer, jiffies +
-			msecs_to_jiffies(TCP_RRE_MSECS_PER_LEAK))) {
+		if (mod_timer(&rbe->s->rbe_timer, jiffies +
+			msecs_to_jiffies(TCP_REVSW_RBE_MSECS_PER_LEAK))) {
 			/* TODO: Handle error */
-			LOG_IT(TCP_RRE_LOG_ERR,
+			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 				"%s: Error modifying timer\n", __func__);
 		}
 	}
 }
 
 /*
- * @tcp_rre_init_timer
+ * @tcp_revsw_rbe_init_timer
  *
  */
-static inline int tcp_rre_init_timer(struct revsw_rre *rre, struct sock *sk)
+static inline int tcp_revsw_rbe_init_timer(struct revsw_rbe *rbe, struct sock *sk)
 {
-	if (!rre->s)
+	if (!rbe->s)
 		return -1;
 
-	if (rre->s->tsk == sk)
+	if (rbe->s->tsk == sk)
 		return 0;
 
 	/* TODO: Instead of memset, just set required variables. */
-	memset(&rre->s->rre_timer, 0, sizeof(struct sess_priv));
+	memset(&rbe->s->rbe_timer, 0, sizeof(struct sess_priv));
 	/* TODO: 1024 and 2, right values? */
-	ewma_init(&rre->s->rre_receiving_rate, 1024, 2);
+	ewma_init(&rbe->s->rbe_receiving_rate, 1024, 2);
 
 	/*
 	 * Set timer and callback function for maintaining
 	 * sending_rate
 	 */
-	rre->s->tsk = sk;
-	setup_timer(&rre->s->rre_timer, tcp_rre_timer_handler,
-		(unsigned long) &rre->s->rre_timer);
-	if (mod_timer(&rre->s->rre_timer, jiffies +
-		msecs_to_jiffies(TCP_RRE_LEAK_QUOTA_TIMER))) {
+	rbe->s->tsk = sk;
+	setup_timer(&rbe->s->rbe_timer, tcp_revsw_rbe_timer_handler,
+		(unsigned long) &rbe->s->rbe_timer);
+	if (mod_timer(&rbe->s->rbe_timer, jiffies +
+		msecs_to_jiffies(TCP_REVSW_RBE_LEAK_QUOTA_TIMER))) {
 		/* TODO: Handle error */
-		LOG_IT(TCP_RRE_LOG_ERR,
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			"%s: Error modifying timer\n", __func__);
 	}
 
@@ -332,162 +332,162 @@ static inline int tcp_rre_init_timer(struct revsw_rre *rre, struct sock *sk)
 }
 
 /*
- * @tcp_rre_receive_rate
+ * @tcp_revsw_rbe_receive_rate
  *
  * Calculate the rate at which reciver is receving data. Our sending rate
  * is calculated based on this value.
  *
  * TODO: Use client TCP timestamp's estimated value.
- * (Current Assumptuion: receiver tick is same as sender tick.)
+ * (Curbent Assumptuion: receiver tick is same as sender tick.)
  */
-static u32 tcp_rre_receive_rate(struct tcp_sock *tp,
-					struct revsw_rre *rre,
+static u32 tcp_revsw_rbe_receive_rate(struct tcp_sock *tp,
+					struct revsw_rbe *rbe,
 					u32 ack)
 {
 	unsigned long r_rate;
 	u32 acked_data, ticks_delta, time_in_milisecs, sacked_bytes = 0;
 	u32 next_checkpoint;
 
-	if (tp->sacked_out > rre->i->rre_last_sacked_out) {
-		sacked_bytes = (tp->sacked_out - rre->i->rre_last_sacked_out)
+	if (tp->sacked_out > rbe->i->rbe_last_sacked_out) {
+		sacked_bytes = (tp->sacked_out - rbe->i->rbe_last_sacked_out)
 						* tp->mss_cache;
-		rre->i->rre_last_sacked_out = tp->sacked_out;
+		rbe->i->rbe_last_sacked_out = tp->sacked_out;
 	}
 
-	acked_data = (ack - rre->i->rre_ack_r1) + sacked_bytes;
-	ticks_delta = tp->rx_opt.rcv_tsval - rre->i->rre_ts_r1;
-	TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre, ticks_delta, time_in_milisecs);
+	acked_data = (ack - rbe->i->rbe_ack_r1) + sacked_bytes;
+	ticks_delta = tp->rx_opt.rcv_tsval - rbe->i->rbe_ts_r1;
+	TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, ticks_delta, time_in_milisecs);
 	if (time_in_milisecs == 0) {
 		/* TODO: Handle this in some other way? */
-		LOG_IT(TCP_RRE_LOG_INFO, "%s: Network is fast!\n",
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s: Network is fast!\n",
 							__func__);
 		return 0;
 	}
 	/* r_rate is in bytes/sec */
 	r_rate = (unsigned long) (1000 * acked_data / time_in_milisecs);
-	ewma_add(&rre->s->rre_receiving_rate, r_rate);
+	ewma_add(&rbe->s->rbe_receiving_rate, r_rate);
 
 	/*
 	 * TODO: Should we NOT take sample when we are
-	 * in TCP_RRE_STATE_SACK ? As you can see below,
+	 * in TCP_REVSW_RBE_STATE_SACK ? As you can see below,
 	 * we are taking samples now.
 	 */
 
 	next_checkpoint =
-		(rre->i->rre_ack_r2 + tp->mss_cache * TCP_RRE_TBUFF_PACKETS);
+		(rbe->i->rbe_ack_r2 + tp->mss_cache * TCP_REVSW_RBE_TBUFF_PACKETS);
 	if ((ack + sacked_bytes > next_checkpoint)) {
-		rre->i->rre_ts_r1	= rre->i->rre_ts_r2;
-		rre->i->rre_ack_r1	= rre->i->rre_ack_r2;
-		rre->i->rre_ts_r2	= tp->rx_opt.rcv_tsval;
-		rre->i->rre_ack_r2	= ack + sacked_bytes;
-		if (tcp_rre_estimate_granularity(tp, rre))
-			TCP_RRE_CALC_TBUFF(tp, rre);
+		rbe->i->rbe_ts_r1	= rbe->i->rbe_ts_r2;
+		rbe->i->rbe_ack_r1	= rbe->i->rbe_ack_r2;
+		rbe->i->rbe_ts_r2	= tp->rx_opt.rcv_tsval;
+		rbe->i->rbe_ack_r2	= ack + sacked_bytes;
+		if (tcp_revsw_rbe_estimate_granularity(tp, rbe))
+			TCP_REVSW_RBE_CALC_TBUFF(tp, rbe);
 
-		LOG_IT(TCP_RRE_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
-			rre->i->rre_sending_rate, ack,
+		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
+			rbe->i->rbe_sending_rate, ack,
 			next_checkpoint);
 	}
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 	"ackd_bytes %u in %u ms. ack %u. r_rate %lu, r_ewma %lu.snd_r = %u\n",
 			acked_data, time_in_milisecs, ack, r_rate,
-			ewma_read(&rre->s->rre_receiving_rate),
-			rre->i->rre_sending_rate);
+			ewma_read(&rbe->s->rbe_receiving_rate),
+			rbe->i->rbe_sending_rate);
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 	"ack %u ; r_rate %lu, avg %lu. snd_r = %u\n",
 			ack, r_rate,
-			ewma_read(&rre->s->rre_receiving_rate),
-			rre->i->rre_sending_rate);
+			ewma_read(&rbe->s->rbe_receiving_rate),
+			rbe->i->rbe_sending_rate);
 
 	return (u32) r_rate;
 
 }
 
 /*
- * @tcp_rre_fill_buffer
+ * @tcp_revsw_rbe_fill_buffer
  *
  * Set Sending rate to > buffer drain rate which will fill network buffer.
  */
-static inline void tcp_rre_fill_buffer(struct tcp_sock *tp,
-					 struct revsw_rre *rre)
+static inline void tcp_revsw_rbe_fill_buffer(struct tcp_sock *tp,
+					 struct revsw_rbe *rbe)
 {
 	u32 srtt_msecs;
 	u32 delta_sending_rate; /* per second */
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
-	delta_sending_rate = 1000 * (rre->s->rre_Bmax - rre->s->rre_T) /
+	delta_sending_rate = 1000 * (rbe->s->rbe_Bmax - rbe->s->rbe_T) /
 			     srtt_msecs;
 
-	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
-	rre->i->rre_sending_rate += delta_sending_rate;
-	TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_FILL);
-	rre->i->rre_drain_start_ts = 0;
+	rbe->i->rbe_sending_rate = (u32) ewma_read(&rbe->s->rbe_receiving_rate);
+	rbe->i->rbe_sending_rate += delta_sending_rate;
+	TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FILL);
+	rbe->i->rbe_drain_start_ts = 0;
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 			"%s: delta_sending_rate %u and sending_rate = %u\n",
 			__func__,
-			delta_sending_rate, rre->i->rre_sending_rate);
+			delta_sending_rate, rbe->i->rbe_sending_rate);
 }
 
 /*
- * @tcp_rre_drain_buffer
+ * @tcp_revsw_rbe_drain_buffer
  *
  * Set Sending rate < buffer drain rate which will drain network buffer.
  */
-static inline void tcp_rre_drain_buffer(struct tcp_sock *tp,
-						struct revsw_rre *rre)
+static inline void tcp_revsw_rbe_drain_buffer(struct tcp_sock *tp,
+						struct revsw_rbe *rbe)
 {
 	u32 srtt_msecs;
 	u32 delta_sending_rate; /* per second */
 
-	if (rre->i->rre_state == TCP_RRE_STATE_DRAIN)
+	if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_DRAIN)
 		return;
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
-	delta_sending_rate = 1000 * (rre->s->rre_T - rre->s->rre_Bmin) /
+	delta_sending_rate = 1000 * (rbe->s->rbe_T - rbe->s->rbe_Bmin) /
 			     srtt_msecs;
 
-	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
-	if (delta_sending_rate > rre->i->rre_sending_rate)
-		rre->i->rre_sending_rate = 2 * tp->mss_cache;
+	rbe->i->rbe_sending_rate = (u32) ewma_read(&rbe->s->rbe_receiving_rate);
+	if (delta_sending_rate > rbe->i->rbe_sending_rate)
+		rbe->i->rbe_sending_rate = 2 * tp->mss_cache;
 	else
-		rre->i->rre_sending_rate -= delta_sending_rate;
+		rbe->i->rbe_sending_rate -= delta_sending_rate;
 
-	if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
-		LOG_IT(TCP_RRE_LOG_INFO,
+	if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN) {
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 			"%s: Reduced sending_rate to %u. delta = %u\n",
 			__func__,
-			rre->i->rre_sending_rate, delta_sending_rate);
-		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK);
+			rbe->i->rbe_sending_rate, delta_sending_rate);
+		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_SACK);
 	} else {
-		/* Set state to TCP_RRE_STATE_DRAIN */
-		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_DRAIN);
+		/* Set state to TCP_REVSW_RBE_STATE_DRAIN */
+		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_DRAIN);
 	}
 
-	if (rre->i->rre_drain_start_ts == 0)
-		rre->i->rre_drain_start_ts = tcp_time_stamp;
+	if (rbe->i->rbe_drain_start_ts == 0)
+		rbe->i->rbe_drain_start_ts = tcp_time_stamp;
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 			"%s: delta_sending_rate %u and sending_rate = %u\n",
 			__func__,
-			delta_sending_rate, rre->i->rre_sending_rate);
+			delta_sending_rate, rbe->i->rbe_sending_rate);
 }
 
 /*
- * @tcp_rre_process_mode_bm
+ * @tcp_revsw_rbe_process_mode_bm
  *
- * This function is called whne TCP-RRE is in BM (Buffer Management) MODE and
+ * This function is called whne TCP-RBE is in BM (Buffer Management) MODE and
  * when we recive an ack/sack.
  */
-static void tcp_rre_process_mode_bm(struct tcp_sock *tp,
-			struct revsw_rre *rre,
+static void tcp_revsw_rbe_process_mode_bm(struct tcp_sock *tp,
+			struct revsw_rbe *rbe,
 			u32 ack)
 {
 	int tbuff, RD, network_buffer_capacity, RDmin;
 	u32 tsval_adjusted, in_msecs;
 
-	tcp_rre_receive_rate(tp, rre, ack);
+	tcp_revsw_rbe_receive_rate(tp, rbe, ack);
 
 	/*
 	 * If the TCP TS granularity of client and server are same,
@@ -496,86 +496,86 @@ static void tcp_rre_process_mode_bm(struct tcp_sock *tp,
 	 * calculate RD.
 	 */
 
-	RDmin = rre->s->rre_rdmin_tsval - rre->s->rre_rdmin_tsecr;
+	RDmin = rbe->s->rbe_rdmin_tsval - rbe->s->rbe_rdmin_tsecr;
 
-	TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre,
-			(tp->rx_opt.rcv_tsval - rre->s->rre_rdmin_tsval),
+	TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe,
+			(tp->rx_opt.rcv_tsval - rbe->s->rbe_rdmin_tsval),
 			in_msecs);
-	tsval_adjusted = rre->s->rre_rdmin_tsval + msecs_to_jiffies(in_msecs);
+	tsval_adjusted = rbe->s->rbe_rdmin_tsval + msecs_to_jiffies(in_msecs);
 
 	RD = tsval_adjusted - tp->rx_opt.rcv_tsecr;
 	if (RD < RDmin) {
-		rre->s->rre_rdmin_tsval = tp->rx_opt.rcv_tsval;
-		rre->s->rre_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
+		rbe->s->rbe_rdmin_tsval = tp->rx_opt.rcv_tsval;
+		rbe->s->rbe_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
 		RD = RDmin;
 	}
 
 	tbuff = RD - RDmin;
 	if (tbuff < 0) {
-		LOG_IT(TCP_RRE_LOG_ERR,
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			"(BM) tbuff < ZERO\n");
 		return;
 	}
 
-	if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
-		tcp_rre_drain_buffer(tp, rre);
-	} else if (rre->i->rre_state != TCP_RRE_STATE_SACK) {
-		network_buffer_capacity = rre->s->rre_T * 1000 /
-			 (u32) ewma_read(&rre->s->rre_receiving_rate);
+	if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN) {
+		tcp_revsw_rbe_drain_buffer(tp, rbe);
+	} else if (rbe->i->rbe_state != TCP_REVSW_RBE_STATE_SACK) {
+		network_buffer_capacity = rbe->s->rbe_T * 1000 /
+			 (u32) ewma_read(&rbe->s->rbe_receiving_rate);
 
 		if (jiffies_to_msecs(tbuff) < network_buffer_capacity)
-			tcp_rre_fill_buffer(tp, rre);
+			tcp_revsw_rbe_fill_buffer(tp, rbe);
 		else
-			tcp_rre_drain_buffer(tp, rre);
+			tcp_revsw_rbe_drain_buffer(tp, rbe);
 
-		LOG_IT(TCP_RRE_LOG_VERBOSE,
+		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 		"(BM) tbuff = %d, network_buffer_capacity = %d, rtt-min %u.\n",
 			jiffies_to_msecs(tbuff),
 			network_buffer_capacity,
-			rre->i->rre_rtt_min);
+			rbe->i->rbe_rtt_min);
 	}
 
 }
 
 /*
- * @tcp_rre_enter_monitor_mode
+ * @tcp_revsw_rbe_enter_monitor_mode
  *
  * Enter Monitor Mode
  * TODO: handle tcp_time_stamp reset
  */
-static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
-							struct revsw_rre *rre)
+static inline void tcp_revsw_rbe_enter_monitor_mode(struct tcp_sock *tp,
+							struct revsw_rbe *rbe)
 {
 	if (tp->sacked_out || tp->lost_out) {
-		if (rre->i->rre_mode != TCP_RRE_MODE_PRE_MONITOR) {
-			TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_PRE_MONITOR);
-			rre->i->rre_sending_rate =
-				max_t(u32, rre->i->rre_sending_rate >> 1,
-				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+		if (rbe->i->rbe_mode != TCP_REVSW_RBE_MODE_PRE_MONITOR) {
+			TCP_REVSW_RBE_SET_MODE(rbe, TCP_REVSW_RBE_MODE_PRE_MONITOR);
+			rbe->i->rbe_sending_rate =
+				max_t(u32, rbe->i->rbe_sending_rate >> 1,
+				(TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE + 10) *
 				tp->mss_cache);
-			/* TODO: Reset rre_drain_start_ts ? */
+			/* TODO: Reset rbe_drain_start_ts ? */
 		}
 		/* Wait until we get ack for all SACKED and LOST packets */
 		return;
 	}
 
-	if (rre->i->rre_mode == TCP_RRE_MODE_PRE_MONITOR) {
+	if (rbe->i->rbe_mode == TCP_REVSW_RBE_MODE_PRE_MONITOR) {
 		/*
 		 * The sending rate is already reduced in PRE_MONITOR mode.
 		 * Now that we do not have any oustanding RTO/SACK
 		 * packets, reset sending_rate.
 		 */
-		rre->i->rre_sending_rate =
-			max_t(u32, rre->i->rre_sending_rate,
-				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+		rbe->i->rbe_sending_rate =
+			max_t(u32, rbe->i->rbe_sending_rate,
+				(TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE + 10) *
 				tp->mss_cache);
 	} else {
 		/*
 		 * Reduce sending rate so that we drain network buffers.
 		 */
-		rre->i->rre_sending_rate =
-			max_t(u32, rre->i->rre_sending_rate >> 1,
-				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+		rbe->i->rbe_sending_rate =
+			max_t(u32, rbe->i->rbe_sending_rate >> 1,
+				(TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE + 10) *
 				tp->mss_cache);
 	}
 
@@ -586,301 +586,301 @@ static inline void tcp_rre_enter_monitor_mode(struct tcp_sock *tp,
 	 * get a more accurate RDmin.
 	 */
 	/* Reset some variables */
-	rre->i->rre_ack_r1 = rre->i->rre_ts_r1 = 0;
-	rre->i->rre_ack_r2 = rre->i->rre_ts_r2 = 0;
-	rre->s->rre_T = rre->s->rre_Bmax = rre->s->rre_Bmin = 0;
-	rre->i->rre_rtt_min = 0;
-	rre->s->rre_rdmin_tsval = rre->s->rre_rdmin_tsecr = 0;
+	rbe->i->rbe_ack_r1 = rbe->i->rbe_ts_r1 = 0;
+	rbe->i->rbe_ack_r2 = rbe->i->rbe_ts_r2 = 0;
+	rbe->s->rbe_T = rbe->s->rbe_Bmax = rbe->s->rbe_Bmin = 0;
+	rbe->i->rbe_rtt_min = 0;
+	rbe->s->rbe_rdmin_tsval = rbe->s->rbe_rdmin_tsecr = 0;
 
-	if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
-		LOG_IT(TCP_RRE_LOG_ERR,
+	if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			"%s: Session DB not yet allocated\n", __func__);
 		return;
 	}
 
 
-	rre->i->rre_ack_r2	= tp->snd_una;
-	rre->i->rre_state	= TCP_RRE_STATE_INVALID;
-	TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_MONITOR);
-	ewma_init(&rre->s->rre_receiving_rate, 1024, 2);
+	rbe->i->rbe_ack_r2	= tp->snd_una;
+	rbe->i->rbe_state	= TCP_REVSW_RBE_STATE_INVALID;
+	TCP_REVSW_RBE_SET_MODE(rbe, TCP_REVSW_RBE_MODE_MONITOR);
+	ewma_init(&rbe->s->rbe_receiving_rate, 1024, 2);
 
-	LOG_IT(TCP_RRE_LOG_INFO, "Entering Monitor Mode (snd_una: %u)\n",
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "Entering Monitor Mode (snd_una: %u)\n",
 		tp->snd_una);
 }
 
-static inline void tcp_rre_process_pre_monitor(struct tcp_sock *tp,
-						struct revsw_rre *rre,
+static inline void tcp_revsw_rbe_process_pre_monitor(struct tcp_sock *tp,
+						struct revsw_rbe *rbe,
 						u32 ack)
 {
-	if (tp->sacked_out > rre->i->rre_last_sacked_out) {
+	if (tp->sacked_out > rbe->i->rbe_last_sacked_out) {
 		/* Got another SACK, reduce sending_rate again */
-		rre->i->rre_sending_rate = max_t(u32,
-				rre->i->rre_sending_rate >> 1,
-				(TCP_RRE_PACKETS_REQ_CALC_RATE + 10) *
+		rbe->i->rbe_sending_rate = max_t(u32,
+				rbe->i->rbe_sending_rate >> 1,
+				(TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE + 10) *
 				tp->mss_cache);
 	}
-	tcp_rre_receive_rate(tp, rre, ack);
-	tcp_rre_enter_monitor_mode(tp, rre);
+	tcp_revsw_rbe_receive_rate(tp, rbe, ack);
+	tcp_revsw_rbe_enter_monitor_mode(tp, rbe);
 }
 
 /*
- * @tcp_rre_enter_bm_mode
+ * @tcp_revsw_rbe_enter_bm_mode
  *
- * Set RRE CCA variables after we get first valid ack.
+ * Set RBE CCA variables after we get first valid ack.
  */
-static inline void tcp_rre_post_first_valid_ack(struct tcp_sock *tp,
-						struct revsw_rre *rre,
+static inline void tcp_revsw_rbe_post_first_valid_ack(struct tcp_sock *tp,
+						struct revsw_rbe *rbe,
 						u32 ack)
 {
-	LOG_IT(TCP_RRE_LOG_INFO, "\nFirst valid ACK %u. %u / %u\n",
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "\nFirst valid ACK %u. %u / %u\n",
 							ack,
 							tp->snd_cwnd,
 							tp->snd_wnd);
-	rre->i->rre_ts_r1	= tp->rx_opt.rcv_tsval;
-	rre->i->rre_ack_r1	= ack;
-	rre->s->rre_rdmin_tsval = tp->rx_opt.rcv_tsval;
-	rre->s->rre_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
-	rre->i->rre_ts_r2	= tp->rx_opt.rcv_tsecr;
+	rbe->i->rbe_ts_r1	= tp->rx_opt.rcv_tsval;
+	rbe->i->rbe_ack_r1	= ack;
+	rbe->s->rbe_rdmin_tsval = tp->rx_opt.rcv_tsval;
+	rbe->s->rbe_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
+	rbe->i->rbe_ts_r2	= tp->rx_opt.rcv_tsecr;
 }
 
 /*
- * @tcp_rre_enter_bm_mode
+ * @tcp_revsw_rbe_enter_bm_mode
  *
  * Enter BM mode.
  */
-static inline void tcp_rre_enter_bm_mode(struct tcp_sock *tp,
-						struct revsw_rre *rre,
+static inline void tcp_revsw_rbe_enter_bm_mode(struct tcp_sock *tp,
+						struct revsw_rbe *rbe,
 						u32 ack)
 {
-	LOG_IT(TCP_RRE_LOG_INFO,
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 		"Switching to BM mode after %u packets are acked.\n",
-		(ack - rre->i->rre_ack_r2) / tp->mss_cache);
+		(ack - rbe->i->rbe_ack_r2) / tp->mss_cache);
 
-	rre->i->rre_ts_r2 = tp->rx_opt.rcv_tsval;
-	rre->i->rre_ack_r2 = ack;
+	rbe->i->rbe_ts_r2 = tp->rx_opt.rcv_tsval;
+	rbe->i->rbe_ack_r2 = ack;
 
-	tcp_rre_receive_rate(tp, rre, ack);
-	TCP_RRE_CALC_TBUFF(tp, rre);
+	tcp_revsw_rbe_receive_rate(tp, rbe, ack);
+	TCP_REVSW_RBE_CALC_TBUFF(tp, rbe);
 
-	rre->i->rre_sending_rate = (u32) ewma_read(&rre->s->rre_receiving_rate);
-	TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_BM);
+	rbe->i->rbe_sending_rate = (u32) ewma_read(&rbe->s->rbe_receiving_rate);
+	TCP_REVSW_RBE_SET_MODE(rbe, TCP_REVSW_RBE_MODE_BM);
 }
 
 /*
- * @tcp_rre_init_monitor_common
+ * @tcp_revsw_rbe_init_monitor_common
  *
  * Common processing for init and monitor mode
  */
-static inline void tcp_rre_init_monitor_common(struct tcp_sock *tp,
-						struct revsw_rre *rre,
+static inline void tcp_revsw_rbe_init_monitor_common(struct tcp_sock *tp,
+						struct revsw_rbe *rbe,
 						u32 ack)
 {
 	int enter_BM_mode;
 	u32 received_in_msecs;
 
-	if (ack >= (rre->i->rre_ack_r2 +
-		(tp->mss_cache * TCP_RRE_PACKETS_REQ_CALC_RATE))) {
+	if (ack >= (rbe->i->rbe_ack_r2 +
+		(tp->mss_cache * TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE))) {
 
-		tcp_rre_estimate_granularity(tp, rre);
+		tcp_revsw_rbe_estimate_granularity(tp, rbe);
 		/*
 		* TODO: Do we want to check if sending_rate MUCH LESSER than
 		* received_in_msecs ?
 		* TODO: Ex: Sending_rate + ((tp->srtt >> 3)/2) < receiving_rate
 		*/
 
-		TCP_RRE_CLINET_JIFFIES_TO_MSECS(rre,
-				(tp->rx_opt.rcv_tsval - rre->i->rre_ts_r1),
+		TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe,
+				(tp->rx_opt.rcv_tsval - rbe->i->rbe_ts_r1),
 				received_in_msecs);
 		/* if (sending_rate < receiving rate) */
-		if (jiffies_to_msecs(tp->rx_opt.rcv_tsecr - rre->i->rre_ts_r2) <
+		if (jiffies_to_msecs(tp->rx_opt.rcv_tsecr - rbe->i->rbe_ts_r2) <
 			received_in_msecs) {
 			/*
-			 * If we receive TCP_RRE_PACKETS_REQ_CALC_RATE and
+			 * If we receive TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE and
 			 * ONLY if those packets were transmitted faster than
 			 * the receiver rate, use it for
 			 * calculating reciver rate.
 			 */
 			enter_BM_mode = 1;
 		} else {
-			LOG_IT(TCP_RRE_LOG_INFO, "Slow Sender\n");
-			rre->i->rre_ts_r2  = tp->rx_opt.rcv_tsecr;
-			rre->i->rre_ts_r1  = tp->rx_opt.rcv_tsval;
-			rre->i->rre_ack_r1 = ack;
-			rre->s->rre_rdmin_tsval = tp->rx_opt.rcv_tsval;
-			rre->s->rre_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
-			rre->i->rre_ack_r2 = ack;
-			rre->i->rre_sending_rate = rre->i->rre_init_cwnd *
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO, "Slow Sender\n");
+			rbe->i->rbe_ts_r2  = tp->rx_opt.rcv_tsecr;
+			rbe->i->rbe_ts_r1  = tp->rx_opt.rcv_tsval;
+			rbe->i->rbe_ack_r1 = ack;
+			rbe->s->rbe_rdmin_tsval = tp->rx_opt.rcv_tsval;
+			rbe->s->rbe_rdmin_tsecr = tp->rx_opt.rcv_tsecr;
+			rbe->i->rbe_ack_r2 = ack;
+			rbe->i->rbe_sending_rate = rbe->i->rbe_init_cwnd *
 					       tp->mss_cache;
 			enter_BM_mode = 0;
 		}
 		if (enter_BM_mode)
-			tcp_rre_enter_bm_mode(tp, rre, ack);
+			tcp_revsw_rbe_enter_bm_mode(tp, rbe, ack);
 	}
 }
 
 /*
- * @tcp_rre_init_monitor_common
+ * @tcp_revsw_rbe_init_monitor_common
  *
  * Set sending rate when you are in init mode. Unless we
  * have recived a SACK, it will be exponential growth
  */
-static inline void tcp_rre_set_init_monitor_sending_rate(
+static inline void tcp_revsw_rbe_set_init_monitor_sending_rate(
 					struct tcp_sock *tp,
-					struct revsw_rre *rre)
+					struct revsw_rbe *rbe)
 {
-	if (rre->i->rre_mode == TCP_RRE_MODE_INIT ||
-		rre->i->rre_mode == TCP_RRE_MODE_MONITOR) {
-		if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN) {
+	if (rbe->i->rbe_mode == TCP_REVSW_RBE_MODE_INIT ||
+		rbe->i->rbe_mode == TCP_REVSW_RBE_MODE_MONITOR) {
+		if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN) {
 			/* TODO: Decrease sending_rate ? */
-			TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK);
+			TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_SACK);
 		} else {
-			rre->i->rre_sending_rate += (3 *
-					(tp->snd_una - rre->i->rre_una));
-			LOG_IT(TCP_RRE_LOG_VERBOSE,
+			rbe->i->rbe_sending_rate += (3 *
+					(tp->snd_una - rbe->i->rbe_una));
+			LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 				"INIT. Exp Growth. Sending Rate: %u\n",
-					rre->i->rre_sending_rate);
+					rbe->i->rbe_sending_rate);
 		}
 	} else {
-		if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN)
-			tcp_rre_drain_buffer(tp, rre);
+		if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN)
+			tcp_revsw_rbe_drain_buffer(tp, rbe);
 		else
-			tcp_rre_fill_buffer(tp, rre);
+			tcp_revsw_rbe_fill_buffer(tp, rbe);
 
-		LOG_IT(TCP_RRE_LOG_SACK,
+		LOG_IT(TCP_REVSW_RBE_LOG_SACK,
 			"Mode: %s. State %s. Sending Rate: %u\n",
-			tcp_rre_mode_string[rre->i->rre_mode],
-			tcp_rre_state_string[rre->i->rre_state],
-			rre->i->rre_sending_rate);
+			tcp_revsw_rbe_mode_string[rbe->i->rbe_mode],
+			tcp_revsw_rbe_state_string[rbe->i->rbe_state],
+			rbe->i->rbe_sending_rate);
 
-		LOG_IT(TCP_RRE_LOG_INFO,
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 			"Sending rate: %u, una: %u\n",
-			rre->i->rre_sending_rate,
+			rbe->i->rbe_sending_rate,
 			tp->snd_una);
 	}
 }
 
 /*
- * @tcp_rre_process_mode_monitor
+ * @tcp_revsw_rbe_process_mode_monitor
  *
- * This function is called when TCP-RRE is
+ * This function is called when TCP-RBE is
  * in MONITOR MODE and when we recive an ack/sack.
  */
-static void tcp_rre_process_mode_monitor(struct tcp_sock *tp,
-						struct revsw_rre *rre,
+static void tcp_revsw_rbe_process_mode_monitor(struct tcp_sock *tp,
+						struct revsw_rbe *rbe,
 						u32 ack)
 {
-	if (rre->i->rre_ack_r1 == 0 && ack > rre->i->rre_ack_r2) {
+	if (rbe->i->rbe_ack_r1 == 0 && ack > rbe->i->rbe_ack_r2) {
 		/*
 		 * We have received all data sent before
 		 * entering monitor mode. Start receive
-		 * rate calculation now. rre->i->rre_ack_r1
+		 * rate calculation now. rbe->i->rbe_ack_r1
 		 */
-		tcp_rre_post_first_valid_ack(tp, rre, ack);
+		tcp_revsw_rbe_post_first_valid_ack(tp, rbe, ack);
 	} else {
-		tcp_rre_init_monitor_common(tp, rre, ack);
+		tcp_revsw_rbe_init_monitor_common(tp, rbe, ack);
 	}
 
-	tcp_rre_set_init_monitor_sending_rate(tp, rre);
+	tcp_revsw_rbe_set_init_monitor_sending_rate(tp, rbe);
 }
 
 /*
- * @tcp_rre_process_mode_init
+ * @tcp_revsw_rbe_process_mode_init
  *
- * This function is called whne TCP-RRE is in INIT MODE
+ * This function is called whne TCP-RBE is in INIT MODE
  * and when we recive an ack/sack.
  */
-static void tcp_rre_process_mode_init(struct tcp_sock *tp,
-						struct revsw_rre *rre,
+static void tcp_revsw_rbe_process_mode_init(struct tcp_sock *tp,
+						struct revsw_rbe *rbe,
 						u32 ack)
 {
 	/*
 	 * At least by this time the session DB should
 	 * be allocated.
 	 */
-	if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
-		LOG_IT(TCP_RRE_LOG_ERR,
+	if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			"%s: Session DB not yet allocated\n", __func__);
 		return;
 	}
 
-	if (rre->i->rre_ack_r1 == 0)
-		tcp_rre_post_first_valid_ack(tp, rre, ack);
+	if (rbe->i->rbe_ack_r1 == 0)
+		tcp_revsw_rbe_post_first_valid_ack(tp, rbe, ack);
 	else
-		tcp_rre_init_monitor_common(tp, rre, ack);
+		tcp_revsw_rbe_init_monitor_common(tp, rbe, ack);
 
-	tcp_rre_set_init_monitor_sending_rate(tp, rre);
+	tcp_revsw_rbe_set_init_monitor_sending_rate(tp, rbe);
 }
 
 /*
- * @tcp_rre_common_ack
+ * @tcp_revsw_rbe_common_ack
  *
  * This function is common for both fast and slow ack
  */
-static inline void tcp_rre_common_ack(struct tcp_sock *tp,
-						 struct revsw_rre *rre)
+static inline void tcp_revsw_rbe_common_ack(struct tcp_sock *tp,
+						 struct revsw_rbe *rbe)
 {
-	if (rre->i->rre_state == TCP_RRE_STATE_SACK &&
-			((tcp_time_stamp - rre->i->rre_sack_time_stamp) >
+	if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_SACK &&
+			((tcp_time_stamp - rbe->i->rbe_sack_time_stamp) >
 			(tp->srtt >> 3))) {
 		/*
 		 * Throttle sending_rate only for one RTT after
 		 * SACK
 		 */
-		LOG_IT(TCP_RRE_LOG_INFO, "\n\t\t RTT\n\n");
-		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_SACK_DONE);
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "\n\t\t RTT\n\n");
+		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_SACK_DONE);
 	}
 
-	switch (rre->i->rre_mode) {
-	case TCP_RRE_MODE_INVALID:
+	switch (rbe->i->rbe_mode) {
+	case TCP_REVSW_RBE_MODE_INVALID:
 		break;
 
-	case TCP_RRE_MODE_INIT:
-		tcp_rre_process_mode_init(tp, rre, tp->snd_una);
+	case TCP_REVSW_RBE_MODE_INIT:
+		tcp_revsw_rbe_process_mode_init(tp, rbe, tp->snd_una);
 		break;
 
-	case TCP_RRE_MODE_BM:
-		tcp_rre_process_mode_bm(tp, rre, tp->snd_una);
+	case TCP_REVSW_RBE_MODE_BM:
+		tcp_revsw_rbe_process_mode_bm(tp, rbe, tp->snd_una);
 		break;
 
-	case TCP_RRE_MODE_PRE_MONITOR:
-		tcp_rre_process_pre_monitor(tp, rre, tp->snd_una);
+	case TCP_REVSW_RBE_MODE_PRE_MONITOR:
+		tcp_revsw_rbe_process_pre_monitor(tp, rbe, tp->snd_una);
 		break;
 
-	case TCP_RRE_MODE_MONITOR:
-		tcp_rre_process_mode_monitor(tp, rre, tp->snd_una);
+	case TCP_REVSW_RBE_MODE_MONITOR:
+		tcp_revsw_rbe_process_mode_monitor(tp, rbe, tp->snd_una);
 		break;
 
 	default:
-		LOG_IT(TCP_RRE_LOG_ERR, "%s: ERROR!\n", __func__);
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR, "%s: ERROR!\n", __func__);
 		break;
 	}
 
-	rre->i->rre_una = tp->snd_una;
+	rbe->i->rbe_una = tp->snd_una;
 }
 
 /*
- * @tcp_rre_handle_slow_ack
+ * @tcp_revsw_rbe_handle_slow_ack
  *
  * Handle slow ack.
  */
-static inline void tcp_rre_handle_slow_ack(struct tcp_sock *tp,
-							 struct revsw_rre *rre)
+static inline void tcp_revsw_rbe_handle_slow_ack(struct tcp_sock *tp,
+							 struct revsw_rbe *rbe)
 {
-	if (tp->sacked_out != rre->i->rre_last_sacked_out) {
+	if (tp->sacked_out != rbe->i->rbe_last_sacked_out) {
 		if (tp->sacked_out &&
-			((tcp_time_stamp - rre->i->rre_sack_time_stamp) >
+			((tcp_time_stamp - rbe->i->rbe_sack_time_stamp) >
 				(tp->srtt >> 3))) {
 			/* Fresh SACK */
-			TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_FORCE_DRAIN);
-			rre->i->rre_sack_time_stamp = tcp_time_stamp;
-			LOG_IT(TCP_RRE_LOG_INFO, "\t\tSACK\n\n");
+			TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FORCE_DRAIN);
+			rbe->i->rbe_sack_time_stamp = tcp_time_stamp;
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO, "\t\tSACK\n\n");
 		}
 
-		LOG_IT(TCP_RRE_LOG_SACK, "sacked_out %u. ack %u ..",
+		LOG_IT(TCP_REVSW_RBE_LOG_SACK, "sacked_out %u. ack %u ..",
 				tp->sacked_out,
 				tp->snd_una);
 
-		LOG_IT(TCP_RRE_LOG_SACK,
+		LOG_IT(TCP_REVSW_RBE_LOG_SACK,
 			"Blocks: %u %u, %u %u, %u %u, %u %u\n",
 			tp->recv_sack_cache[0].start_seq,
 			tp->recv_sack_cache[0].end_seq,
@@ -892,41 +892,41 @@ static inline void tcp_rre_handle_slow_ack(struct tcp_sock *tp,
 			tp->recv_sack_cache[3].end_seq);
 	}
 
-	tcp_rre_common_ack(tp, rre);
+	tcp_revsw_rbe_common_ack(tp, rbe);
 }
 
 /*
- * @tcp_rre_handle_fast_ack
+ * @tcp_revsw_rbe_handle_fast_ack
  *
  * Handle fast ack.
  */
-static inline void tcp_rre_handle_fast_ack(struct tcp_sock *tp,
-					   struct revsw_rre *rre)
+static inline void tcp_revsw_rbe_handle_fast_ack(struct tcp_sock *tp,
+					   struct revsw_rbe *rbe)
 {
-	if (tp->sacked_out != rre->i->rre_last_sacked_out) {
+	if (tp->sacked_out != rbe->i->rbe_last_sacked_out) {
 		if (tp->sacked_out)
-			LOG_IT(TCP_RRE_LOG_INFO,
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 			       "sacked_out: fast ack? %u %u\n",
-			       tp->sacked_out, rre->i->rre_last_sacked_out);
+			       tp->sacked_out, rbe->i->rbe_last_sacked_out);
 
-		LOG_IT(TCP_RRE_LOG_INFO, "last sacked out updated! %u %u",
-		       tp->sacked_out, rre->i->rre_last_sacked_out);
-		rre->i->rre_last_sacked_out = tp->sacked_out;
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "last sacked out updated! %u %u",
+		       tp->sacked_out, rbe->i->rbe_last_sacked_out);
+		rbe->i->rbe_last_sacked_out = tp->sacked_out;
 	}
 
-	tcp_rre_common_ack(tp, rre);
+	tcp_revsw_rbe_common_ack(tp, rbe);
 }
 
 /*
- * @tcp_rre_remaining_leak_quota
+ * @tcp_revsw_rbe_remaining_leak_quota
  *
  * Return number of packets that can be sent as part
  * of this leak
  *
  * TODO: handle tcp_time_stamp reset
  */
-static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
-							struct revsw_rre *rre)
+static inline int tcp_revsw_rbe_remaining_leak_quota(struct tcp_sock *tp,
+							struct revsw_rbe *rbe)
 {
 	/* Bytes Sent out after the last call to this function. */
 	u32 bytes_sent;
@@ -937,39 +937,39 @@ static inline int tcp_rre_remaining_leak_quota(struct tcp_sock *tp,
 	u32 unutilized_time; /* In that leak */
 
 	leak_time = jiffies_to_msecs(tcp_time_stamp -
-				     rre->i->rre_leak_start_ts);
+				     rbe->i->rbe_leak_start_ts);
 
 	quota = 0;
 
-	if (leak_time <= TCP_RRE_MSECS_PER_LEAK) {
+	if (leak_time <= TCP_REVSW_RBE_MSECS_PER_LEAK) {
 		/* Still in same leak/drop. */
-		bytes_sent = tp->snd_nxt - rre->i->rre_last_snd_nxt;
-		rre->i->rre_bytes_sent_this_leak += bytes_sent;
-		if (rre->i->rre_bytes_sent_this_leak < rre->i->rre_sending_rate)
-			quota = rre->i->rre_sending_rate -
-					rre->i->rre_bytes_sent_this_leak;
+		bytes_sent = tp->snd_nxt - rbe->i->rbe_last_snd_nxt;
+		rbe->i->rbe_bytes_sent_this_leak += bytes_sent;
+		if (rbe->i->rbe_bytes_sent_this_leak < rbe->i->rbe_sending_rate)
+			quota = rbe->i->rbe_sending_rate -
+					rbe->i->rbe_bytes_sent_this_leak;
 	} else {
-		if (tcp_rre_init_timer(rre, (struct sock *) tp) == -1) {
-			LOG_IT(TCP_RRE_LOG_ERR,
+		if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
+			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			       "%s: Session DB not yet allocated\n", __func__);
 			goto exit;
 		}
 		/* Next leak */
 		unutilized_time = msecs_to_jiffies((leak_time - 1000) % 1000);
-		rre->i->rre_leak_start_ts = tcp_time_stamp - unutilized_time;
+		rbe->i->rbe_leak_start_ts = tcp_time_stamp - unutilized_time;
 
-		if (timer_pending(&rre->s->rre_timer) == 0) {
+		if (timer_pending(&rbe->s->rbe_timer) == 0) {
 			/* If timer is not pending, start it. */
-			if (mod_timer(&rre->s->rre_timer, jiffies +
-				msecs_to_jiffies(TCP_RRE_LEAK_QUOTA_TIMER) -
+			if (mod_timer(&rbe->s->rbe_timer, jiffies +
+				msecs_to_jiffies(TCP_REVSW_RBE_LEAK_QUOTA_TIMER) -
 				unutilized_time)) {
 				/* TODO: Handle error? */
-				LOG_IT(TCP_RRE_LOG_ERR,
+				LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 					"%s: Error modifying timer", __func__);
 			}
 		}
-		rre->i->rre_bytes_sent_this_leak = 0;
-		quota = rre->i->rre_sending_rate;
+		rbe->i->rbe_bytes_sent_this_leak = 0;
+		quota = rbe->i->rbe_sending_rate;
 	}
 
 exit:
@@ -977,7 +977,7 @@ exit:
 }
 
 /*
- * @tcp_rre_get_cwnd_quota
+ * @tcp_revsw_rbe_get_cwnd_quota
  *
  * This function is called before sending any packet out on wire.
  * Here we determine the number of packets that can be sent
@@ -986,68 +986,68 @@ exit:
  *
  * TODO: handle tcp_time_stamp reset
  */
-static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
+static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	/* Quota: Bytes that can be sent out on wire. */
 	u32 quota, in_flight;
 	int cwnd_quota;
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
-	if (rre->i->rre_last_snd_nxt == 0) {
+	if (rbe->i->rbe_last_snd_nxt == 0) {
 
 		/*
 		 * First Drop.
 		 * First time this function is getting called for this socket.
 		 */
 
-		rre->i->rre_bytes_sent_this_leak	= 0;
-		rre->i->rre_leak_start_ts		= tcp_time_stamp;
-		rre->i->rre_init_cwnd			= tp->snd_cwnd;
-		rre->i->rre_una				= tp->snd_una;
-		rre->i->rre_ack_r2			= tp->snd_una;
-		rre->i->rre_sending_rate = quota = rre->i->rre_init_cwnd * 1448;
-		TCP_RRE_SET_MODE(rre, TCP_RRE_MODE_INIT);
+		rbe->i->rbe_bytes_sent_this_leak	= 0;
+		rbe->i->rbe_leak_start_ts		= tcp_time_stamp;
+		rbe->i->rbe_init_cwnd			= tp->snd_cwnd;
+		rbe->i->rbe_una				= tp->snd_una;
+		rbe->i->rbe_ack_r2			= tp->snd_una;
+		rbe->i->rbe_sending_rate = quota = rbe->i->rbe_init_cwnd * 1448;
+		TCP_REVSW_RBE_SET_MODE(rbe, TCP_REVSW_RBE_MODE_INIT);
 
 		/*
 		 * If session DB is not yet allocated, timer_init wont happen.
 		 * We will try again later
 		 */
-		tcp_rre_init_timer(rre, sk);
+		tcp_revsw_rbe_init_timer(rbe, sk);
 
-		LOG_IT(TCP_RRE_LOG_INFO,
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 			"Sending Very first packet (%u / %u) and una : %u\n",
-					rre->i->rre_init_cwnd, tp->snd_cwnd,
+					rbe->i->rbe_init_cwnd, tp->snd_cwnd,
 					tp->snd_una);
 	} else {
-		if (rre->i->rre_mode != TCP_RRE_MODE_MONITOR &&
-			rre->i->rre_mode != TCP_RRE_MODE_PRE_MONITOR &&
-			rre->i->rre_drain_start_ts >
+		if (rbe->i->rbe_mode != TCP_REVSW_RBE_MODE_MONITOR &&
+			rbe->i->rbe_mode != TCP_REVSW_RBE_MODE_PRE_MONITOR &&
+			rbe->i->rbe_drain_start_ts >
 				(tcp_time_stamp + (4 * (tp->srtt >> 3)))) {
 			/*
 			 * Enter Monitor Mode. We are in
 			 * BUFFER_DRAIN state for more than 4 RTT
 			 */
-			LOG_IT(TCP_RRE_LOG_INFO, "!!Enter Monitor Mode\n");
-			tcp_rre_enter_monitor_mode(tp, rre);
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO, "!!Enter Monitor Mode\n");
+			tcp_revsw_rbe_enter_monitor_mode(tp, rbe);
 		}
-		quota = tcp_rre_remaining_leak_quota(tp, rre);
+		quota = tcp_revsw_rbe_remaining_leak_quota(tp, rbe);
 	}
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 		"Quota: %u, snd_rate %u, BY_sent %u last_SN %u, SN = %u\n",
-				quota, rre->i->rre_sending_rate,
-				rre->i->rre_bytes_sent_this_leak,
-				rre->i->rre_last_snd_nxt, tp->snd_nxt);
+				quota, rbe->i->rbe_sending_rate,
+				rbe->i->rbe_bytes_sent_this_leak,
+				rbe->i->rbe_last_snd_nxt, tp->snd_nxt);
 
-	rre->i->rre_last_snd_nxt = tp->snd_nxt;
+	rbe->i->rbe_last_snd_nxt = tp->snd_nxt;
 	/*
 	 * The TCP stack checks tp->snd_cwnd value at several
 	 * places. Anyway this variable has no significance when
-	 * TCP-RRE is used as CCA. The 2 conditions which we
+	 * TCP-RBE is used as CCA. The 2 conditions which we
 	 * have to meet pacify the stack are
 	 * (1) it shouldn't be zero (2) It > packets_in_flight.
 	 */
@@ -1056,56 +1056,56 @@ static int tcp_rre_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 	tp->snd_cwnd = in_flight + cwnd_quota + 2;
 
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE,
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 		"cwnd_quota %d, flight %u, cwnd %u ; snd_cwnd %u\n\n",
 		cwnd_quota, in_flight,
-		rre->i->rre_sending_rate / max_t(u32, 1, tp->mss_cache),
+		rbe->i->rbe_sending_rate / max_t(u32, 1, tp->mss_cache),
 		tp->snd_cwnd);
 
 	return cwnd_quota;
 }
 
 /*
- * @tcp_rre_init
+ * @tcp_revsw_rbe_init
  *
  * Starts session DB for this connection.
  */
-static void tcp_rre_init(struct sock *sk)
+static void tcp_revsw_rbe_init(struct sock *sk)
 {
 	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
-	LOG_IT(TCP_RRE_LOG_INFO, "%s\n", __func__);
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s\n", __func__);
 }
 
 /*
- * @tcp_rre_release
+ * @tcp_revsw_rbe_release
  *
  * This function setups up the deletion of the session database entry used by
  * this connection.
  */
-static void tcp_rre_release(struct sock *sk)
+static void tcp_revsw_rbe_release(struct sock *sk)
 {
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
-	if (rre->s)
-		rre->s->tsk = NULL;
+	if (rbe->s)
+		rbe->s->tsk = NULL;
 	tcp_session_delete(sk);
 
-	LOG_IT(TCP_RRE_LOG_INFO, "%s Exiting\n", __func__);
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s Exiting\n", __func__);
 }
 
 /*
- * @tcp_rre_ssthresh
+ * @tcp_revsw_rbe_ssthresh
  *
- * This is a mandatory callback function. Currently not used by RRE.
+ * This is a mandatory callback function. Curbently not used by RBE.
  * TODO: Check where this function si called from and if we can use
- * this for RRE.
+ * this for RBE.
  * TODO: Also check if returning a different value makes
- * any difference to RRE
+ * any difference to RBE
  */
-static u32 tcp_rre_ssthresh(struct sock *sk)
+static u32 tcp_revsw_rbe_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
@@ -1113,85 +1113,85 @@ static u32 tcp_rre_ssthresh(struct sock *sk)
 }
 
 /*
- * @tcp_rre_cong_avoid
+ * @tcp_revsw_rbe_cong_avoid
  *
- * This is a mandatory callback function. Currently not used by RRE.
+ * This is a mandatory callback function. Curbently not used by RBE.
  * TODO: Check where this function si called from and if we can use
- * this for RRE.
+ * this for RBE.
  * TODO: Also check if returning a different value makes
- * any difference to RRE
+ * any difference to RBE
  */
-static void tcp_rre_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
+static void tcp_revsw_rbe_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 }
 
 /*
- * @tcp_rre_pkts_acked
+ * @tcp_revsw_rbe_pkts_acked
  *
  * Called after processing group of packets.
- * but all RRE needs is the minimum RTT.
+ * but all RBE needs is the minimum RTT.
  */
-static void tcp_rre_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
+static void tcp_revsw_rbe_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 {
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
 	if (rtt > 0) {
-		if (rre->i->rre_rtt_min == 0) {
-			rre->i->rre_rtt_min = (u32)rtt / (u32)USEC_PER_MSEC;
-			LOG_IT(TCP_RRE_LOG_INFO,
-				"Setting rtt-min: %u\n", rre->i->rre_rtt_min);
+		if (rbe->i->rbe_rtt_min == 0) {
+			rbe->i->rbe_rtt_min = (u32)rtt / (u32)USEC_PER_MSEC;
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+				"Setting rtt-min: %u\n", rbe->i->rbe_rtt_min);
 		} else {
-			rre->i->rre_rtt_min = min_t(u32,
+			rbe->i->rbe_rtt_min = min_t(u32,
 						(u32)rtt / (u32)USEC_PER_MSEC,
-						rre->i->rre_rtt_min);
+						rbe->i->rbe_rtt_min);
 		}
 	}
 }
 
 /*
- * @tcp_rre_state
+ * @tcp_revsw_rbe_state
  *
  * Handling RTO in this function.
  */
-static void tcp_rre_state(struct sock *sk, u8 new_state)
+static void tcp_revsw_rbe_state(struct sock *sk, u8 new_state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
 	if (new_state == TCP_CA_Loss) {
-		LOG_IT(TCP_RRE_LOG_INFO, "TCP_CA_Loss State\n");
-		TCP_RRE_SET_STATE(rre, TCP_RRE_STATE_FORCE_DRAIN);
-		rre->i->rre_sack_time_stamp = tcp_time_stamp;
-		tcp_rre_drain_buffer(tp, rre);
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "TCP_CA_Loss State\n");
+		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FORCE_DRAIN);
+		rbe->i->rbe_sack_time_stamp = tcp_time_stamp;
+		tcp_revsw_rbe_drain_buffer(tp, rbe);
 	}
 }
 
 /*
- * @tcp_rre_event
+ * @tcp_revsw_rbe_event
  *
  * Fast acks and Slow acks used to calculate receiving rate and adjust
- *  sending rate. SACK is also handled (with respect to RRE) in this function.
+ *  sending rate. SACK is also handled (with respect to RBE) in this function.
  */
-static void tcp_rre_event(struct sock *sk, enum tcp_ca_event event)
+static void tcp_revsw_rbe_event(struct sock *sk, enum tcp_ca_event event)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_rre *rre, __rre;
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	struct revsw_rbe *rbe, __rbe;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
 	switch (event) {
 	case CA_EVENT_FAST_ACK:
-		tcp_rre_handle_fast_ack(tp, rre);
+		tcp_revsw_rbe_handle_fast_ack(tp, rbe);
 		break;
 
 	case CA_EVENT_SLOW_ACK:
-		tcp_rre_handle_slow_ack(tp, rre);
+		tcp_revsw_rbe_handle_slow_ack(tp, rbe);
 		break;
 
 	default:
@@ -1201,93 +1201,93 @@ static void tcp_rre_event(struct sock *sk, enum tcp_ca_event event)
 }
 
 /*
- * @tcp_rre_syn_post_config
+ * @tcp_revsw_rbe_syn_post_config
  *
  * Use this function to calculate first RTT which inturn is used to
  * estimate client's TCP timestamp. (To be implemented)
  */
-static void tcp_rre_syn_post_config(struct sock *sk)
+static void tcp_revsw_rbe_syn_post_config(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE, "%s: Entering\n", __func__);
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "%s: Entering\n", __func__);
 
 	if (!tp->rx_opt.tstamp_ok) {
-		LOG_IT(TCP_RRE_LOG_ERR,
+		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 		"%s: Timestamp not enabled on client . RBE can not be CCA for this connection\n",
 		__func__);
-		rre->i->rre_syn_ack_tsecr = 0;
+		rbe->i->rbe_syn_ack_tsecr = 0;
 	} else {
 		/* TODO: SYN ACK must not be re-tx */
-		rre->i->rre_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
+		rbe->i->rbe_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
 	}
 
 	tcp_revsw_syn_post_config(sk);
 }
 
 static bool
-tcp_rre_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
+tcp_revsw_rbe_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 			    unsigned int mss_now, int nonagle)
 {
 	return tcp_revsw_handle_nagle_test(sk, skb, mss_now, nonagle);
 }
 
 /*
- * @tcp_rre_snd_wnd_test
+ * @tcp_revsw_rbe_snd_wnd_test
  *
  * This function determines if we should
  * ignore or honor receive window?
  */
 static bool
-tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
+tcp_revsw_rbe_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		     unsigned int cur_mss)
 {
 	int test_snd_wnd;
 	u32 delta_win;
 	struct sock *sk = (struct sock *) tp;
-	struct revsw_rre *rre, __rre;
+	struct revsw_rbe *rbe, __rbe;
 
-	TCP_RRE_PRIVATE_DATE(__rre);
-	rre = &__rre;
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
 
 	switch (revsw_tcp_test_snd_wnd) {
 
-	case TCP_RRE_IGNORE_INIT_BURST:
-		if (revsw_cong_wnd && rre->i->rre_mode == TCP_RRE_MODE_INIT)
-			test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
+	case TCP_REVSW_RBE_IGNORE_INIT_BURST:
+		if (revsw_cong_wnd && rbe->i->rbe_mode == TCP_REVSW_RBE_MODE_INIT)
+			test_snd_wnd = TCP_REVSW_RBE_IGNORE_RCV_WND;
 		else
-			test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+			test_snd_wnd = TCP_REVSW_RBE_HONOR_RCV_WND;
 		break;
 
-	case TCP_RRE_HONOR_NO_REXMIT:
-		if (rre->i->rre_state == TCP_RRE_STATE_FORCE_DRAIN ||
-				rre->i->rre_state == TCP_RRE_STATE_SACK)
-			test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+	case TCP_REVSW_RBE_HONOR_NO_REXMIT:
+		if (rbe->i->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN ||
+				rbe->i->rbe_state == TCP_REVSW_RBE_STATE_SACK)
+			test_snd_wnd = TCP_REVSW_RBE_HONOR_RCV_WND;
 
 		/* No break, continue */
 
-	case TCP_RRE_IGNORE_RCV_WND:
+	case TCP_REVSW_RBE_IGNORE_RCV_WND:
 		if (revsw_rwin_scale > 0) {
 			delta_win = tp->snd_wnd * revsw_rwin_scale / 100;
 			if (TCP_SKB_CB(tcp_send_head(sk))->seq >
 				(tp->snd_una +
 				(tp->snd_wnd + delta_win)))
-				test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+				test_snd_wnd = TCP_REVSW_RBE_HONOR_RCV_WND;
 			}
 
-		test_snd_wnd = TCP_RRE_IGNORE_RCV_WND;
+		test_snd_wnd = TCP_REVSW_RBE_IGNORE_RCV_WND;
 		break;
 
 	default:
-		test_snd_wnd = TCP_RRE_HONOR_RCV_WND;
+		test_snd_wnd = TCP_REVSW_RBE_HONOR_RCV_WND;
 		break;
 	}
 
-	if (test_snd_wnd == TCP_RRE_HONOR_RCV_WND) {
+	if (test_snd_wnd == TCP_REVSW_RBE_HONOR_RCV_WND) {
 		u32 end_seq = TCP_SKB_CB(skb)->end_seq;
 
 		if (skb->len > cur_mss)
@@ -1295,7 +1295,7 @@ tcp_rre_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 
 		return !after(end_seq, tcp_wnd_end(tp));
 	} else {
-		return TCP_RRE_IGNORE_RCV_WND;
+		return TCP_REVSW_RBE_IGNORE_RCV_WND;
 	}
 }
 
@@ -1304,31 +1304,31 @@ static void tcp_rbe_session_delete_cb(struct tcp_session_info *info,
 {
 	struct sess_priv *s = (struct sess_priv *) cca_priv;
 
-	LOG_IT(TCP_RRE_LOG_VERBOSE, "%s: Cleaning up\n", __func__);
+	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "%s: Cleaning up\n", __func__);
 
-	del_timer(&s->rre_timer);
+	del_timer(&s->rbe_timer);
 }
 
-static struct tcp_congestion_ops tcp_rre_cca __read_mostly = {
+static struct tcp_congestion_ops tcp_revsw_rbe_cca __read_mostly = {
 	.flags		= TCP_CONG_RTT_STAMP,
-	.init		= tcp_rre_init,
-	.release	= tcp_rre_release,
-	.ssthresh	= tcp_rre_ssthresh,
-	.cong_avoid	= tcp_rre_cong_avoid,
+	.init		= tcp_revsw_rbe_init,
+	.release	= tcp_revsw_rbe_release,
+	.ssthresh	= tcp_revsw_rbe_ssthresh,
+	.cong_avoid	= tcp_revsw_rbe_cong_avoid,
 	.min_cwnd	= NULL,
-	.set_state	= tcp_rre_state,
-	.cwnd_event	= tcp_rre_event,
+	.set_state	= tcp_revsw_rbe_state,
+	.cwnd_event	= tcp_revsw_rbe_event,
 	.get_info	= NULL,
-	.pkts_acked	= tcp_rre_pkts_acked,
-	.syn_post_config = tcp_rre_syn_post_config,
+	.pkts_acked	= tcp_revsw_rbe_pkts_acked,
+	.syn_post_config = tcp_revsw_rbe_syn_post_config,
 	.set_nwin_size = NULL,
-	.handle_nagle_test = tcp_rre_handle_nagle_test,
+	.handle_nagle_test = tcp_revsw_rbe_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
-	.get_cwnd_quota = tcp_rre_get_cwnd_quota,
-	.snd_wnd_test = tcp_rre_snd_wnd_test,
+	.get_cwnd_quota = tcp_revsw_rbe_get_cwnd_quota,
+	.snd_wnd_test = tcp_revsw_rbe_snd_wnd_test,
 
 	.owner		= THIS_MODULE,
-	.name		= "rre"
+	.name		= "rbe"
 };
 
 static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
@@ -1336,24 +1336,24 @@ static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
 	.session_delete = tcp_rbe_session_delete_cb
 };
 
-static int __init tcp_rre_register(void)
+static int __init tcp_revsw_rbe_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct icsk_priv) > ICSK_CA_PRIV_SIZE);
 	BUILD_BUG_ON(sizeof(struct sess_priv) > TCP_CCA_PRIV_SIZE);
 
 	tcp_session_register_ops(TCP_REVSW_CCA_RBE, &tcp_rbe_session_ops);
-	return tcp_register_congestion_control(&tcp_rre_cca);
+	return tcp_register_congestion_control(&tcp_revsw_rbe_cca);
 }
 
-static void __exit tcp_rre_unregister(void)
+static void __exit tcp_revsw_rbe_unregister(void)
 {
 	tcp_session_deregister_ops(TCP_REVSW_CCA_RBE);
-	tcp_unregister_congestion_control(&tcp_rre_cca);
+	tcp_unregister_congestion_control(&tcp_revsw_rbe_cca);
 }
 
-module_init(tcp_rre_register);
-module_exit(tcp_rre_unregister);
+module_init(tcp_revsw_rbe_register);
+module_exit(tcp_revsw_rbe_unregister);
 
 MODULE_AUTHOR("Akhil Shashidhar");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TCP RevSw RRE");
+MODULE_DESCRIPTION("TCP RevSw RBE");

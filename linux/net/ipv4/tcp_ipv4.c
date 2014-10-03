@@ -1573,7 +1573,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	skb_synack = tcp_make_synack(sk, dst, req,
 	    fastopen_cookie_present(&valid_foc) ? &valid_foc : NULL);
 
-	tp->rre_syn_tsval = tmp_opt.rcv_tsval;
+	tp->rbe_syn_tsval = tmp_opt.rcv_tsval;
 
 	if (skb_synack) {
 		__tcp_v4_send_check(skb_synack, ireq->loc_addr, ireq->rmt_addr);
