@@ -84,6 +84,15 @@ EXPORT_SYMBOL_GPL(revsw_rwin_scale);
 int revsw_disable_nagle_mss __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_disable_nagle_mss);
 
+int revsw_cl_entries;
+EXPORT_SYMBOL_GPL(revsw_cl_entries);
+
+int revsw_cn_entries;
+EXPORT_SYMBOL_GPL(revsw_cn_entries);
+
+int revsw_fc_entries;
+EXPORT_SYMBOL_GPL(revsw_fc_entries);
+
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
 static struct ctl_table revsw_ctl_table[] = {
@@ -178,6 +187,27 @@ static struct ctl_table revsw_ctl_table[] = {
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.data = &revsw_disable_nagle_mss,
+		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "revsw_cl_entries",
+		.maxlen = sizeof(int),
+		.mode = 0444,
+		.data = &revsw_cl_entries,
+		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "revsw_cn_entries",
+		.maxlen = sizeof(int),
+		.mode = 0444,
+		.data = &revsw_cn_entries,
+		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "revsw_fc_entries",
+		.maxlen = sizeof(int),
+		.mode = 0444,
+		.data = &revsw_fc_entries,
 		.proc_handler = &proc_dointvec,
 	},
 

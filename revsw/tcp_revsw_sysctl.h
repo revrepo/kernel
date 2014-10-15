@@ -44,5 +44,10 @@ extern int revsw_max_init_cwnd;
 extern int revsw_rwin_scale;
 extern int revsw_disable_nagle_mss;
 
+extern int revsw_cl_entries;
+extern int revsw_cn_entries;
+extern int revsw_fc_entries;
+
+
 #endif /* __TCP_REVSW_SYSCTL_H__ */
 
