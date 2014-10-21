@@ -84,14 +84,19 @@ EXPORT_SYMBOL_GPL(revsw_rwin_scale);
 int revsw_disable_nagle_mss __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_disable_nagle_mss);
 
-int revsw_cl_entries;
+int revsw_cl_entries __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_cl_entries);
 
-int revsw_cn_entries;
+int revsw_cn_entries __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_cn_entries);
 
-int revsw_fc_entries;
+int revsw_fc_entries __read_mostly;
 EXPORT_SYMBOL_GPL(revsw_fc_entries);
+
+static int revsw_cl_entries_min = REVSW_CL_ENTRIES_MIN;
+static int revsw_cl_entries_max = REVSW_CL_ENTRIES_MAX;
+int revsw_max_cl_entries __read_mostly = REVSW_CL_ENTRIES_DEFAULT;
+EXPORT_SYMBOL_GPL(revsw_max_cl_entries);
 
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
@@ -209,6 +214,15 @@ static struct ctl_table revsw_ctl_table[] = {
 		.mode = 0444,
 		.data = &revsw_fc_entries,
 		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "revsw_max_cl_entries",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &revsw_max_cl_entries,
+		.proc_handler = &proc_dointvec,
+		.extra1 = &revsw_cl_entries_min,
+		.extra2 = &revsw_cl_entries_max,
 	},
 
 	{}

@@ -77,7 +77,6 @@ struct tcp_session_hash_entry {
 struct tcp_session_container {
 	struct hlist_head hlist;
 	struct delayed_work work;
-	bool work_pending;
 	spinlock_t lock;
 	u16 entries;
 };
@@ -318,17 +317,38 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 	}
 
 	if (!client) {
-		memcpy(&session, &entry->hdata.session, sizeof(session));
-		memset(&entry->hdata.session, 0, sizeof(session));
+		/*
+		 * TEMPORARY Change
+		 * If we have reached the maximum number of client records
+		 * allowed on the system or the backoff level for this record
+		 * is level than 2, do not create a new client record.
+		 */
+		backoff_level = (entry->hdata.session.total_retrans * 10) /
+		entry->hdata.session.total_pkts;
 
-		client = &entry->hdata.client[entry->hdata.session.rwin];
+		if ((revsw_cl_entries >= revsw_max_cl_entries) ||
+			(backoff_level < TCP_REVSW_BKO_LVL2)) {
 
-		tcp_session_update_info(&session, client);
+			spin_unlock_bh(&thash->client_list.lock);
 
-		hlist_add_head(&entry->node, &thash->client_list.hlist);
-		thash->client_list.entries++;
-		revsw_cl_entries++;
-		spin_unlock_bh(&thash->client_list.lock);
+			spin_lock_bh(&tcpsi_container.lock);
+			hlist_add_head(&entry->node, &tcpsi_container.hlist);
+			tcpsi_container.entries++;
+			revsw_fc_entries++;
+			spin_unlock_bh(&tcpsi_container.lock);
+		} else {
+			memcpy(&session, &entry->hdata.session, sizeof(session));
+			memset(&entry->hdata.session, 0, sizeof(session));
+
+			client = &entry->hdata.client[entry->hdata.session.rwin];
+
+			tcp_session_update_info(&session, client);
+
+			hlist_add_head(&entry->node, &thash->client_list.hlist);
+			thash->client_list.entries++;
+			revsw_cl_entries++;
+			spin_unlock_bh(&thash->client_list.lock);
+		}
 	} else {
 		tcp_session_update_info(&entry->hdata.session, client);
 

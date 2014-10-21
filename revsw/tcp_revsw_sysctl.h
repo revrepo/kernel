@@ -32,6 +32,10 @@
 #define REVSW_RWIN_SCALE_MIN		0
 #define REVSW_RWIN_SCALE_MAX		sizeof(int)
 
+#define REVSW_CL_ENTRIES_MIN	1
+#define REVSW_CL_ENTRIES_MAX	10000
+#define REVSW_CL_ENTRIES_DEFAULT 3000
+
 extern int revsw_sm_rcv_wnd;
 extern int revsw_lrg_rcv_wnd;
 extern int revsw_cong_wnd;
@@ -47,7 +51,7 @@ extern int revsw_disable_nagle_mss;
 extern int revsw_cl_entries;
 extern int revsw_cn_entries;
 extern int revsw_fc_entries;
-
+extern int revsw_max_cl_entries;
 
 #endif /* __TCP_REVSW_SYSCTL_H__ */
 
