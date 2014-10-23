@@ -163,7 +163,7 @@ static void tcp_revsw_session_allocate_block(struct work_struct *work)
 
 	tcpsi_container.entries += TCP_SESSION_BLOCK_SIZE;
 
-	revsw_fc_entries += TCP_SESSION_BLOCK_SIZE;
+	tcp_revsw_sysctls.fc_entries += TCP_SESSION_BLOCK_SIZE;
 
 	spin_unlock_bh(&tcpsi_container.lock);
 }
@@ -181,7 +181,7 @@ static struct tcp_session_hash_entry *tcp_revsw_session_get_free_entry(void)
 
 	hlist_del(&entry->node);
 	tcpsi_container.entries--;
-	revsw_fc_entries--;
+	tcp_revsw_sysctls.fc_entries--;
 	spin_unlock_bh(&tcpsi_container.lock);
 
 	/*
@@ -237,7 +237,7 @@ tcp_session_add_connection_entry(struct tcp_session_hash_entry *entry)
 	spin_lock_bh(&thash->conn_list.lock);
 	hlist_add_head(&entry->node, &thash->conn_list.hlist);
 	thash->conn_list.entries++;
-	revsw_cn_entries++;
+	tcp_revsw_sysctls.cn_entries++;
 	spin_unlock_bh(&thash->conn_list.lock);
 }
 
@@ -254,7 +254,7 @@ tcp_session_delete_connection_entry(struct tcp_session_hash_entry *entry)
 	spin_lock_bh(&thash->conn_list.lock);
 	hlist_del(&entry->node);
 	thash->conn_list.entries--;
-	revsw_cn_entries--;
+	tcp_revsw_sysctls.cn_entries--;
 	spin_unlock_bh(&thash->conn_list.lock);
 }
 
@@ -326,15 +326,15 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 		backoff_level = (entry->hdata.session.total_retrans * 10) /
 		entry->hdata.session.total_pkts;
 
-		if ((revsw_cl_entries >= revsw_max_cl_entries) ||
-			(backoff_level < TCP_REVSW_BKO_LVL2)) {
+		if ((tcp_revsw_sysctls.cl_entries >= tcp_revsw_sysctls.max_cl_entries) ||
+		    (backoff_level < TCP_REVSW_BKO_LVL2)) {
 
 			spin_unlock_bh(&thash->client_list.lock);
 
 			spin_lock_bh(&tcpsi_container.lock);
 			hlist_add_head(&entry->node, &tcpsi_container.hlist);
 			tcpsi_container.entries++;
-			revsw_fc_entries++;
+			tcp_revsw_sysctls.fc_entries++;
 			spin_unlock_bh(&tcpsi_container.lock);
 		} else {
 			memcpy(&session, &entry->hdata.session, sizeof(session));
@@ -346,7 +346,7 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 
 			hlist_add_head(&entry->node, &thash->client_list.hlist);
 			thash->client_list.entries++;
-			revsw_cl_entries++;
+			tcp_revsw_sysctls.cl_entries++;
 			spin_unlock_bh(&thash->client_list.lock);
 		}
 	} else {
@@ -357,7 +357,7 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 		spin_lock_bh(&tcpsi_container.lock);
 		hlist_add_head(&entry->node, &tcpsi_container.hlist);
 		tcpsi_container.entries++;
-		revsw_fc_entries++;
+		tcp_revsw_sysctls.fc_entries++;
 		spin_unlock_bh(&tcpsi_container.lock);
 	}
 }
@@ -660,9 +660,9 @@ static int __init tcp_revsw_session_db_register(void)
 
 	tcpsi_entry_block_cnt = 0;
 
-	revsw_cl_entries = 0;
-	revsw_cn_entries = 0;
-	revsw_fc_entries = 0;
+	tcp_revsw_sysctls.cl_entries = 0;
+	tcp_revsw_sysctls.cn_entries = 0;
+	tcp_revsw_sysctls.fc_entries = 0;
 
 	/*
 	 * Initial all lists, locks, etc for the tcpsi container hash
@@ -681,7 +681,7 @@ static int __init tcp_revsw_session_db_register(void)
 		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
 
 	tcpsi_container.entries = TCP_SESSION_BLOCK_SIZE;
-	revsw_fc_entries = TCP_SESSION_BLOCK_SIZE;
+	tcp_revsw_sysctls.fc_entries = TCP_SESSION_BLOCK_SIZE;
 
 	/*
 	 * Initial all lists, locks, etc for the tcpsi hash

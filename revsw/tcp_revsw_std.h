@@ -50,8 +50,8 @@ tcp_revsw_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
 	minscheck = after(tp->snd_sml, tp->snd_una) &&
 		    !after(tp->snd_sml, tp->snd_nxt);
 
-	if (revsw_disable_nagle_mss)
-		mss = revsw_packet_size;
+	if (tcp_revsw_sysctls.disable_nagle_mss)
+		mss = tcp_revsw_sysctls.packet_size;
 
 	if (!((skb->len < mss) && ((nonagle & TCP_NAGLE_CORK) ||
 	    (!nonagle && tp->packets_out && minscheck))))
@@ -67,9 +67,9 @@ static void tcp_revsw_initial_rwn(struct sock *sk, u8 bko_level)
 	u32 multiplier = 1;
 
 	if (rwn < REVSW_LARGE_RWND_SIZE)
-		multiplier = revsw_sm_rcv_wnd;
+		multiplier = tcp_revsw_sysctls.sm_rcv_wnd;
 	else if (rwn < (REVSW_LARGE_RWND_SIZE * 2))
-		multiplier = revsw_lrg_rcv_wnd;
+		multiplier = tcp_revsw_sysctls.lrg_rcv_wnd;
 
 	if (bko_level)
 		multiplier = 1;
@@ -85,17 +85,17 @@ static void tcp_revsw_initial_cwn(struct sock *sk, u8 bko_level)
 	u32 rwn = tp->snd_wnd;
 	u32 cwn;
 
-	if (revsw_cong_wnd == 0)
-		cwn = rwn / revsw_packet_size;
+	if (tcp_revsw_sysctls.cong_wnd == 0)
+		cwn = rwn / tcp_revsw_sysctls.packet_size;
 	else
-		cwn = revsw_cong_wnd;
+		cwn = tcp_revsw_sysctls.cong_wnd;
 
 	/*
 	 * Ensure that the initial congestion window is not larger
 	 * than the configured maximum.
 	 */
-	if (cwn > revsw_max_init_cwnd)
-		cwn = revsw_max_init_cwnd;
+	if (cwn > tcp_revsw_sysctls.max_init_cwnd)
+		cwn = tcp_revsw_sysctls.max_init_cwnd;
 
 	/*
 	 * Make sure to not include this session in the active count
@@ -110,8 +110,8 @@ static void tcp_revsw_initial_cwn(struct sock *sk, u8 bko_level)
 	 * the TCP_REVSW_LOCALHOST address.
 	 */
 	if (act_cnt && (inet->inet_daddr != TCP_REVSW_LOCALHOST) &&
-	    revsw_active_scale)
-		cwn = (cwn * revsw_active_scale) / 100;
+	    tcp_revsw_sysctls.active_scale)
+		cwn = (cwn * tcp_revsw_sysctls.active_scale) / 100;
 
 	if (bko_level)
 		cwn /= bko_level;

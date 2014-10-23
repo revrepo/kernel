@@ -129,7 +129,7 @@ struct revsw_rbe {
 };
 
 #define LOG_IT(loglevel, format, ...)  { \
-	if (tcp_revsw_rbe_loglevel && tcp_revsw_rbe_loglevel >= loglevel)  { \
+	if (tcp_revsw_sysctls.rbe_loglevel && tcp_revsw_sysctls.rbe_loglevel >= loglevel)  { \
 		if (loglevel == TCP_REVSW_RBE_LOG_ERR)		\
 			pr_err(format, ## __VA_ARGS__);		\
 		else						\
@@ -1254,10 +1254,10 @@ tcp_revsw_rbe_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
 
-	switch (revsw_tcp_test_snd_wnd) {
+	switch (tcp_revsw_sysctls.test_tcp_snd_wnd) {
 
 	case TCP_REVSW_RBE_IGNORE_INIT_BURST:
-		if (revsw_cong_wnd && rbe->i->rbe_mode == TCP_REVSW_RBE_MODE_INIT)
+		if (tcp_revsw_sysctls.cong_wnd && rbe->i->rbe_mode == TCP_REVSW_RBE_MODE_INIT)
 			test_snd_wnd = TCP_REVSW_RBE_IGNORE_RCV_WND;
 		else
 			test_snd_wnd = TCP_REVSW_RBE_HONOR_RCV_WND;
@@ -1271,8 +1271,8 @@ tcp_revsw_rbe_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		/* No break, continue */
 
 	case TCP_REVSW_RBE_IGNORE_RCV_WND:
-		if (revsw_rwin_scale > 0) {
-			delta_win = tp->snd_wnd * revsw_rwin_scale / 100;
+		if (tcp_revsw_sysctls.rwin_scale > 0) {
+			delta_win = tp->snd_wnd * tcp_revsw_sysctls.rwin_scale / 100;
 			if (TCP_SKB_CB(tcp_send_head(sk))->seq >
 				(tp->snd_una +
 				(tp->snd_wnd + delta_win)))
