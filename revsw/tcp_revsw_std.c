@@ -19,8 +19,16 @@
 #include <linux/spinlock.h>
 #include <net/tcp.h>
 #include "tcp_revsw.h"
-#include "tcp_revsw_std.h"
 #include "tcp_revsw_session_db.h"
+
+#define TCP_REVSW_RTT_MIN   (HZ/20)	/* 50ms */
+#define TCP_REVSW_INIT_RTT  (20*HZ)	/* maybe too conservative?! */
+#define BICTCP_BETA_SCALE    1024	/* Scale factor beta calculation
+									 * max_cwnd = snd_cwnd * beta
+									 */
+
+#define BICTCP_HZ     10  /* BIC HZ 2^10 = 1024 */
+
 
 /* TCP RevSw structure */
 struct revsw_std {
@@ -60,6 +68,20 @@ static u32 beta_scale __read_mostly;
 static u64 cube_factor __read_mostly;
 
 /*
+ * @tcp_revsw_std_get_ca
+ *
+ * The congestion control data stored within the sock is of
+ * type struct tcp_revsw_cca_data.  Need to convert this to
+ * the revsw_std type.
+ */
+static struct revsw_std *tcp_revsw_std_get_ca(const struct sock *sk)
+{
+	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk);
+
+	return (struct revsw_std *)ca->padding;
+}
+
+/*
  * @tcp_revsw_std_init
  * This function initializes fields used in TCP Westwood+,
  * it is called after the initial SYN, so the sequence numbers
@@ -72,29 +94,29 @@ static u64 cube_factor __read_mostly;
  */
 static void tcp_revsw_std_init(struct sock *sk)
 {
-	struct revsw_std *w = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 
-	w->bk = 0;
-	w->bw_ns_est = 0;
-	w->bw_est = 0;
-	w->accounted = 0;
-	w->cumul_ack = 0;
-	w->reset_rtt_min = 1;
-	w->rtt_min = w->rtt = TCP_REVSW_INIT_RTT;
-	w->rtt_win_sx = tcp_time_stamp;
-	w->snd_una = tcp_sk(sk)->snd_una;
-	w->first_ack = 1;
-	w->cnt = 0;
-	w->last_max_cwnd = 0;
-	w->last_cwnd = 0;
-	w->last_time = 0;
-	w->bic_origin_point = 0;
-	w->bic_K = 0;
-	w->delay_min = 0;
-	w->epoch_start = 0;
-	w->delayed_ack = 2 << ACK_RATIO_SHIFT;
-	w->ack_cnt = 0;
-	w->tcp_cwnd = 0;
+	ca->bk = 0;
+	ca->bw_ns_est = 0;
+	ca->bw_est = 0;
+	ca->accounted = 0;
+	ca->cumul_ack = 0;
+	ca->reset_rtt_min = 1;
+	ca->rtt_min = ca->rtt = TCP_REVSW_INIT_RTT;
+	ca->rtt_win_sx = tcp_time_stamp;
+	ca->snd_una = tcp_sk(sk)->snd_una;
+	ca->first_ack = 1;
+	ca->cnt = 0;
+	ca->last_max_cwnd = 0;
+	ca->last_cwnd = 0;
+	ca->last_time = 0;
+	ca->bic_origin_point = 0;
+	ca->bic_K = 0;
+	ca->delay_min = 0;
+	ca->epoch_start = 0;
+	ca->delayed_ack = 2 << ACK_RATIO_SHIFT;
+	ca->ack_cnt = 0;
+	ca->tcp_cwnd = 0;
 
 	tcp_session_add(sk, TCP_REVSW_CCA_STANDARD);
 }
@@ -119,14 +141,14 @@ static void tcp_revsw_std_release(struct sock *sk)
 static u32 tcp_revsw_std_bw_rtt(const struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	const struct revsw_std *w = inet_csk_ca(sk);
+	const struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 	u32 rtt;
 	u32 tmp;
 
 	/* Rev, go with RTT instead of RTT_min */
-	rtt = w->rtt;
+	rtt = ca->rtt;
 
-	tmp = (w->bw_est * rtt) / tp->mss_cache;
+	tmp = (ca->bw_est * rtt) / tp->mss_cache;
 
 	return max_t(u32, tmp, 2);
 }
@@ -134,7 +156,7 @@ static u32 tcp_revsw_std_bw_rtt(const struct sock *sk)
 static u32 tcp_revsw_std_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_std *ca = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 	u32 ssthresh_more;
 	u32 ssthresh;
 
@@ -329,7 +351,7 @@ void tcp_revsw_std_cong_avoid_ai(struct tcp_sock *tp, u32 w)
 static void tcp_revsw_std_increase_cwin(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_std *ca = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 
 	if (!tcp_is_cwnd_limited(sk, in_flight))
 		return;
@@ -383,18 +405,18 @@ static inline u32 tcp_revsw_std_do_filter(u32 a, u32 b)
 	return ((7 * a) + b) >> 3;
 }
 
-static void tcp_revsw_std_filter(struct revsw_std *w, u32 delta)
+static void tcp_revsw_std_filter(struct revsw_std *ca, u32 delta)
 {
 	/*
 	 * If the filter is empty fill it with the first
 	 * sample of bandwidth
 	 */
-	if (w->bw_ns_est == 0 && w->bw_est == 0) {
-		w->bw_ns_est = w->bk / delta;
-		w->bw_est = w->bw_ns_est;
+	if (ca->bw_ns_est == 0 && ca->bw_est == 0) {
+		ca->bw_ns_est = ca->bk / delta;
+		ca->bw_est = ca->bw_ns_est;
 	} else {
-		w->bw_ns_est = tcp_revsw_std_do_filter(w->bw_ns_est, w->bk / delta);
-		w->bw_est = tcp_revsw_std_do_filter(w->bw_est, w->bw_ns_est);
+		ca->bw_ns_est = tcp_revsw_std_do_filter(ca->bw_ns_est, ca->bk / delta);
+		ca->bw_est = tcp_revsw_std_do_filter(ca->bw_est, ca->bw_ns_est);
 	}
 }
 
@@ -405,10 +427,10 @@ static void tcp_revsw_std_filter(struct revsw_std *w, u32 delta)
  */
 static void tcp_revsw_std_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 {
-	struct revsw_std *w = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 
 	if (rtt > 0)
-		w->rtt = usecs_to_jiffies(rtt);
+		ca->rtt = usecs_to_jiffies(rtt);
 }
 
 /*
@@ -418,18 +440,18 @@ static void tcp_revsw_std_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
  */
 static void tcp_revsw_std_update_window(struct sock *sk)
 {
-	struct revsw_std *w = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 	struct tcp_session_info *info;
 
-	s32 delta = tcp_time_stamp - w->rtt_win_sx;
+	s32 delta = tcp_time_stamp - ca->rtt_win_sx;
 
-	/* Initialize w->snd_una with the first acked sequence number in order
-	 * to fix mismatch between tp->snd_una and w->snd_una for the first
+	/* Initialize ca->snd_una with the first acked sequence number in order
+	 * to fix mismatch between tp->snd_una and ca->snd_una for the first
 	 * bandwidth sample
 	 */
-	if (w->first_ack) {
-		w->snd_una = tcp_sk(sk)->snd_una;
-		w->first_ack = 0;
+	if (ca->first_ack) {
+		ca->snd_una = tcp_sk(sk)->snd_una;
+		ca->first_ack = 0;
 	}
 
 	/*
@@ -441,27 +463,27 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 	 * Obviously on a LAN we reasonably will always have
 	 * right_bound = left_bound + REVSW_RTT_MIN
 	 */
-	if (w->rtt && delta > max_t(u32, w->rtt, TCP_REVSW_RTT_MIN)) {
-		tcp_revsw_std_filter(w, delta);
+	if (ca->rtt && delta > max_t(u32, ca->rtt, TCP_REVSW_RTT_MIN)) {
+		tcp_revsw_std_filter(ca, delta);
 
-		w->bk = 0;
-		w->rtt_win_sx = tcp_time_stamp;
+		ca->bk = 0;
+		ca->rtt_win_sx = tcp_time_stamp;
 
 		info = tcp_session_get_info_ptr(sk);
 		if (info) {
-			info->latency = w->rtt;
-			info->bandwidth = w->bw_est;
+			info->latency = ca->rtt;
+			info->bandwidth = ca->bw_est;
 		}
 	}
 }
 
-static inline void tcp_revsw_std_update_rtt_min(struct revsw_std *w)
+static inline void tcp_revsw_std_update_rtt_min(struct revsw_std *ca)
 {
-	if (w->reset_rtt_min) {
-		w->rtt_min = w->rtt;
-		w->reset_rtt_min = 0;
+	if (ca->reset_rtt_min) {
+		ca->rtt_min = ca->rtt;
+		ca->reset_rtt_min = 0;
 	} else
-		w->rtt_min = min(w->rtt, w->rtt_min);
+		ca->rtt_min = min(ca->rtt, ca->rtt_min);
 }
 
 /*
@@ -473,13 +495,13 @@ static inline void tcp_revsw_std_update_rtt_min(struct revsw_std *w)
 static inline void tcp_revsw_std_fast_bw(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_std *w = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 
 	tcp_revsw_std_update_window(sk);
 
-	w->bk += tp->snd_una - w->snd_una;
-	w->snd_una = tp->snd_una;
-	tcp_revsw_std_update_rtt_min(w);
+	ca->bk += tp->snd_una - ca->snd_una;
+	ca->snd_una = tp->snd_una;
+	tcp_revsw_std_update_rtt_min(ca);
 }
 
 /*
@@ -490,38 +512,38 @@ static inline void tcp_revsw_std_fast_bw(struct sock *sk)
 static inline u32 tcp_revsw_std_acked_count(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_std *w = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 
-	w->cumul_ack = tp->snd_una - w->snd_una;
+	ca->cumul_ack = tp->snd_una - ca->snd_una;
 
 	/* If cumul_ack is 0 this is a dupack since it's not moving
 	 * tp->snd_una.
 	 */
-	if (!w->cumul_ack) {
-		w->accounted += tp->mss_cache;
-		w->cumul_ack = tp->mss_cache;
+	if (!ca->cumul_ack) {
+		ca->accounted += tp->mss_cache;
+		ca->cumul_ack = tp->mss_cache;
 	}
 
-	if (w->cumul_ack > tp->mss_cache) {
+	if (ca->cumul_ack > tp->mss_cache) {
 		/* Partial or delayed ack */
-		if (w->accounted >= w->cumul_ack) {
-			w->accounted -= w->cumul_ack;
-			w->cumul_ack = tp->mss_cache;
+		if (ca->accounted >= ca->cumul_ack) {
+			ca->accounted -= ca->cumul_ack;
+			ca->cumul_ack = tp->mss_cache;
 		} else {
-			w->cumul_ack -= w->accounted;
-			w->accounted = 0;
+			ca->cumul_ack -= ca->accounted;
+			ca->accounted = 0;
 		}
 	}
 
-	w->snd_una = tp->snd_una;
+	ca->snd_una = tp->snd_una;
 
-	return w->cumul_ack;
+	return ca->cumul_ack;
 }
 
 static void tcp_revsw_std_event(struct sock *sk, enum tcp_ca_event event)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_std *w = inet_csk_ca(sk);
+	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 	u32 ssthresh;
 
 	switch (event) {
@@ -542,13 +564,13 @@ static void tcp_revsw_std_event(struct sock *sk, enum tcp_ca_event event)
 						(tp->snd_cwnd >> 2U)));
 
 			/* Update RTT_min when next ack arrives */
-			w->reset_rtt_min = 1;
+			ca->reset_rtt_min = 1;
 		break;
 
 	case CA_EVENT_SLOW_ACK:
 			tcp_revsw_std_update_window(sk);
-			w->bk += tcp_revsw_std_acked_count(sk);
-			tcp_revsw_std_update_rtt_min(w);
+			ca->bk += tcp_revsw_std_acked_count(sk);
+			tcp_revsw_std_update_rtt_min(ca);
 		break;
 
 	default:
@@ -558,11 +580,12 @@ static void tcp_revsw_std_event(struct sock *sk, enum tcp_ca_event event)
 }
 
 
-/* Extract info for Tcp socket info provided via netlink. */
+/* Extract info for TCP socket info provided via netlink. */
 static void tcp_revsw_std_info(struct sock *sk, u32 ext,
 			      struct sk_buff *skb)
 {
-	const struct revsw_std *ca = inet_csk_ca(sk);
+	const struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
+
 	if (ext & (1 << (INET_DIAG_VEGASINFO - 1))) {
 		struct tcpvegas_info info = {
 			.tcpv_enabled = 1,
@@ -626,9 +649,9 @@ static struct tcp_congestion_ops tcp_revsw_std __read_mostly = {
 	.cwnd_event	= tcp_revsw_std_event,
 	.get_info	= tcp_revsw_std_info,
 	.pkts_acked	= tcp_revsw_std_pkts_acked,
-	.syn_post_config = tcp_revsw_syn_post_config,
+	.syn_post_config = tcp_revsw_generic_syn_post_config,
 	.set_nwin_size = tcp_revsw_std_set_nwin_size,
-	.handle_nagle_test = tcp_revsw_handle_nagle_test,
+	.handle_nagle_test = tcp_revsw_generic_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
 	.get_cwnd_quota = tcp_revsw_std_get_cwnd_quota,
 
@@ -636,12 +659,12 @@ static struct tcp_congestion_ops tcp_revsw_std __read_mostly = {
 	.name		= "revsw"
 };
 
-static int __init tcp_revsw_std_register(void)
+static void __init tcp_revsw_std_cca_init(void)
 {
-	BUILD_BUG_ON(sizeof(struct revsw_std) > ICSK_CA_PRIV_SIZE);
+	BUILD_BUG_ON(sizeof(struct revsw_std) > TCP_REVSW_CCA_PADDING);
 
 	beta_scale = 8 * (BICTCP_BETA_SCALE + beta) / 3 /
-		     (BICTCP_BETA_SCALE - beta);
+	(BICTCP_BETA_SCALE - beta);
 
 	cube_rtt_scale = (bic_scale * 10);	/* 1024*c/rtt */
 
@@ -663,18 +686,11 @@ static int __init tcp_revsw_std_register(void)
 
 	/* divide by bic_scale and by constant Srtt (100ms) */
 	do_div(cube_factor, bic_scale * 10);
-
-	return tcp_register_congestion_control(&tcp_revsw_std);
 }
 
-static void __exit tcp_revsw_std_unregister(void)
-{
-	tcp_unregister_congestion_control(&tcp_revsw_std);
-}
-
-module_init(tcp_revsw_std_register);
-module_exit(tcp_revsw_std_unregister);
-
-MODULE_AUTHOR("Tom Kavanagh");
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TCP RevSw");
+struct tcp_revsw_cca_entry tcp_revsw_std_cca  __read_mostly = {
+	.revsw_cca = TCP_REVSW_CCA_STANDARD,
+	.cca_init = tcp_revsw_std_cca_init,
+	.cca_ops = &tcp_revsw_std,
+	.session_ops = NULL,
+};
