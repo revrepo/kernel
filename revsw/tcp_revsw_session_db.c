@@ -577,6 +577,15 @@ void tcp_session_delete(struct sock *sk)
 	u32 cca_type;
 	u32 nbytes;
 
+	/*
+	 * It is possible that a socket was opened but never went through a 
+	 * complete connection setup., the TCP socket session_info
+	 * pointer will be NULL.  If this is the case simply return as 
+	 * there is no information to update.
+	 */
+	if (!tp->session_info)
+		return;
+
 	session = tp->session_info;
 	cca_type = session->info.cca_type;
 
