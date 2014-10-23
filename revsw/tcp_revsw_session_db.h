@@ -72,5 +72,7 @@ extern void tcp_session_delete(struct sock *sk);
 extern struct tcp_session_info *tcp_session_get_info_ptr(struct sock *sk);
 extern u32 *tcp_session_get_cca_priv(struct sock *sk);
 extern u8 tcp_session_get_backoff_level(struct sock *sk);
+extern int tcp_revsw_session_db_init(void);
+extern void tcp_revsw_session_db_remove(void);
 
 #endif /* __TCP_REVSW_SESSION_DB_H__ */

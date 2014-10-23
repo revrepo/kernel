@@ -1,17 +1,22 @@
 /*
+ *   tcp_revsw.h
  *
- *   RevSw TCP Sysctl Support
+ *   RevSw TCP Congestion Control Algorithm Wrapper
  *
- * This module provides the sysctls that the various RevSw
- * congestion control algortihms and session database require.
+ * RevSw has two congestion control algorithms that can be used
+ * depending on various paramters: who initiated the connection,
+ * what TCP parameters are supported on the connection, etc.  This
+ * module provides a means to automatically determine which CCA
+ * should be used and provides the mechanism to call the appropriate
+ * CCA specific APIs when necessary.
  *
- * Copyright (c) 2013-2014, Rev Software, Inc.
- * All Rights Reserved.
- * This code is confidential and proprietary to Rev Software, Inc
- * and may only be used under a license from Rev Software Inc.
+ * Copyright 2014 - RevSw
+ *
  */
-#ifndef __TCP_REVSW_SYSCTL_H__
-#define __TCP_REVSW_SYSCTL_H__
+#ifndef __TCP_REVSW_H__
+#define __TCP_REVSW_H__
+
+#define TCP_REVSW_LOCALHOST 0x100007f
 
 #define REVSW_LARGE_RWND_SIZE		65535
 #define TCP_REVSW_RBE_LOG_DEFAULT	0
@@ -50,7 +55,7 @@ struct tcp_revsw_sysctl_data {
 	int max_cl_entries;
 };
 
+extern struct ctl_table revsw_ctl_table[];
 extern struct tcp_revsw_sysctl_data tcp_revsw_sysctls;
 
-#endif /* __TCP_REVSW_SYSCTL_H__ */
-
+#endif /* __TCP_REVSW_H__ */

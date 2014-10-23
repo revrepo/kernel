@@ -17,7 +17,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
-#include "tcp_revsw_sysctl.h"
+#include "tcp_revsw.h"
 
 #define REVSW_RWND_MPLR_MIN		1
 #define REVSW_RWND_MPLR_MAX		5
@@ -57,8 +57,6 @@ static int revsw_rwin_scale_max = REVSW_RWIN_SCALE_MAX;
 static int revsw_cl_entries_min = REVSW_CL_ENTRIES_MIN;
 static int revsw_cl_entries_max = REVSW_CL_ENTRIES_MAX;
 
-static struct ctl_table_header *revsw_ctl_table_hdr;
-
 struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.sm_rcv_wnd = REVSW_RWND_MPLR_DEFAULT,
 	.lrg_rcv_wnd = REVSW_LARGE_RWND_MPLR,
@@ -73,10 +71,11 @@ struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.cl_entries = 0,
 	.cn_entries = 0,
 	.fc_entries = 0,
+	.max_cl_entries = 0,
 };
 EXPORT_SYMBOL_GPL(tcp_revsw_sysctls);
 
-static struct ctl_table revsw_ctl_table[] = {
+struct ctl_table revsw_ctl_table[] = {
 	{
 		.procname = "revsw_sm_rcv_wnd",
 		.maxlen = sizeof(int),
@@ -194,24 +193,3 @@ static struct ctl_table revsw_ctl_table[] = {
 
 	{}
 };
-
-static int __init tcp_revsw_sysctl_register(void)
-{
-	revsw_ctl_table_hdr = register_sysctl("revsw", revsw_ctl_table);
-	if (!revsw_ctl_table_hdr)
-		return -EFAULT;
-
-	return 0;
-}
-
-static void __exit tcp_revsw_sysctl_unregister(void)
-{
-	unregister_sysctl_table(revsw_ctl_table_hdr);
-}
-
-module_init(tcp_revsw_sysctl_register);
-module_exit(tcp_revsw_sysctl_unregister);
-
-MODULE_AUTHOR("Tom Kavanagh");
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TCP RevSw Sysctl");

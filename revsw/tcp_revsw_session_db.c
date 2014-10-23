@@ -18,8 +18,8 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
+#include "tcp_revsw.h"
 #include "tcp_revsw_session_db.h"
-#include "tcp_revsw_sysctl.h"
 
 #define TCP_SESSION_BLOCK_SIZE	300
 
@@ -653,7 +653,7 @@ EXPORT_SYMBOL_GPL(tcp_session_get_cca_priv);
 /*
  * tcp_revsw_session_db_register
  */
-static int __init tcp_revsw_session_db_register(void)
+int __init tcp_revsw_session_db_init(void)
 {
 	struct tcp_session_hash_entry *entry;
 	int i;
@@ -713,7 +713,7 @@ container_fail:
 /*
  * tcp_revsw_session_db_unregister
  */
-static void __exit tcp_revsw_session_db_unregister(void)
+void __exit tcp_revsw_session_db_remove(void)
 {
 	int i;
 
@@ -722,10 +722,3 @@ static void __exit tcp_revsw_session_db_unregister(void)
 
 	kfree(tcpsi_hash);
 }
-
-module_init(tcp_revsw_session_db_register);
-module_exit(tcp_revsw_session_db_unregister);
-
-MODULE_AUTHOR("Tom Kavanagh");
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TCP RevSw Session DB");
