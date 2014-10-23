@@ -47,6 +47,7 @@ struct tcp_revsw_cca_entry {
  * for every different RevSw algorithm.
  */
 extern struct tcp_revsw_cca_entry tcp_revsw_std_cca;
+extern struct tcp_revsw_cca_entry tcp_revsw_rbe_cca;
 
 /*
  * RevSw Sysctl defines and data structures

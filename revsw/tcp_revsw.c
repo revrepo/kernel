@@ -31,6 +31,7 @@ static struct ctl_table_header *revsw_ctl_table_hdr;
 struct tcp_revsw_cca_entry *tcp_revsw_cca_info[TCP_REVSW_CCA_MAX] =
 {
 	[TCP_REVSW_CCA_STANDARD] = &tcp_revsw_std_cca,
+	[TCP_REVSW_CCA_RBE] = &tcp_revsw_rbe_cca,
 };
 
 /*

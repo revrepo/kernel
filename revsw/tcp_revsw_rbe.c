@@ -153,8 +153,9 @@ struct revsw_rbe {
 
 #define TCP_REVSW_RBE_PRIVATE_DATE(__rbe)	\
 {	\
-	__rbe.i = (struct icsk_priv *) inet_csk_ca(sk);	\
-	__rbe.s = (struct sess_priv *) tcp_session_get_cca_priv(sk); \
+	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk); \
+	__rbe.i = (struct icsk_priv *)ca->padding;	\
+	__rbe.s = (struct sess_priv *)tcp_session_get_cca_priv(sk); \
 }
 
 #define TCP_REVSW_RBE_CALC_TBUFF(tp, rbe)	do { \
@@ -232,6 +233,7 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct revsw_rbe *rbe, __rbe;
+	struct tcp_revsw_cca_data *ca;
 
 	__rbe.s = (struct sess_priv *) data;
 	if (__rbe.s == NULL) {
@@ -252,7 +254,8 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 	}
 
 	tp = tcp_sk(sk);
-	__rbe.i = (struct icsk_priv *) inet_csk_ca(sk);
+	ca = inet_csk_ca(sk);
+	__rbe.i = (struct icsk_priv *)ca->padding;
 	rbe = &__rbe;
 
 	if (rbe->i->rbe_bytes_sent_this_leak < rbe->i->rbe_sending_rate) {
@@ -1225,14 +1228,7 @@ static void tcp_revsw_rbe_syn_post_config(struct sock *sk)
 		rbe->i->rbe_syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
 	}
 
-	tcp_revsw_syn_post_config(sk);
-}
-
-static bool
-tcp_revsw_rbe_handle_nagle_test(struct sock *sk, struct sk_buff *skb,
-			    unsigned int mss_now, int nonagle)
-{
-	return tcp_revsw_handle_nagle_test(sk, skb, mss_now, nonagle);
+	tcp_revsw_generic_syn_post_config(sk);
 }
 
 /*
@@ -1308,7 +1304,7 @@ static void tcp_rbe_session_delete_cb(struct tcp_session_info *info,
 	del_timer(&s->rbe_timer);
 }
 
-static struct tcp_congestion_ops tcp_revsw_rbe_cca __read_mostly = {
+static struct tcp_congestion_ops tcp_revsw_rbe __read_mostly = {
 	.flags		= TCP_CONG_RTT_STAMP,
 	.init		= tcp_revsw_rbe_init,
 	.release	= tcp_revsw_rbe_release,
@@ -1321,7 +1317,7 @@ static struct tcp_congestion_ops tcp_revsw_rbe_cca __read_mostly = {
 	.pkts_acked	= tcp_revsw_rbe_pkts_acked,
 	.syn_post_config = tcp_revsw_rbe_syn_post_config,
 	.set_nwin_size = NULL,
-	.handle_nagle_test = tcp_revsw_rbe_handle_nagle_test,
+	.handle_nagle_test = tcp_revsw_generic_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
 	.get_cwnd_quota = tcp_revsw_rbe_get_cwnd_quota,
 	.snd_wnd_test = tcp_revsw_rbe_snd_wnd_test,
@@ -1335,24 +1331,8 @@ static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
 	.session_delete = tcp_rbe_session_delete_cb
 };
 
-static int __init tcp_revsw_rbe_register(void)
-{
-	BUILD_BUG_ON(sizeof(struct icsk_priv) > ICSK_CA_PRIV_SIZE);
-	BUILD_BUG_ON(sizeof(struct sess_priv) > TCP_CCA_PRIV_SIZE);
-
-	tcp_session_register_ops(TCP_REVSW_CCA_RBE, &tcp_rbe_session_ops);
-	return tcp_register_congestion_control(&tcp_revsw_rbe_cca);
-}
-
-static void __exit tcp_revsw_rbe_unregister(void)
-{
-	tcp_session_deregister_ops(TCP_REVSW_CCA_RBE);
-	tcp_unregister_congestion_control(&tcp_revsw_rbe_cca);
-}
-
-module_init(tcp_revsw_rbe_register);
-module_exit(tcp_revsw_rbe_unregister);
-
-MODULE_AUTHOR("Akhil Shashidhar");
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TCP RevSw RBE");
+struct tcp_revsw_cca_entry tcp_revsw_rbe_cca __read_mostly = {
+	.revsw_cca = TCP_REVSW_CCA_STANDARD,
+	.cca_ops = &tcp_revsw_rbe,
+	.session_ops = &tcp_rbe_session_ops,
+};
