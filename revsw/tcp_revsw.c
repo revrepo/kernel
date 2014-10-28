@@ -56,13 +56,23 @@ static void tcp_revsw_init(struct sock *sk)
 {
 	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk);
 	struct tcp_congestion_ops *cca_ops;
+	struct tcp_sock *tp = tcp_sk(sk);
+	int cca = TCP_REVSW_CCA_STANDARD;
 
 	/*
-	 * Currently we only have one CCA until RBE is turned on
-	 * so set this connection to use RevSw Std.
+	 * Currently there are two CCAs, STD and RBE.  RBE
+	 * will be selected as long as the following conditions
+	 * are met:
+	 * - this box is not the one who initiated the connection
+	 * - the client requesting the connection has TCP timestamps enabled
+	 * - RBE is listed in the supported_cca sysctl
 	 */
-	ca->tcp_revsw_cca = TCP_REVSW_CCA_STANDARD;
-	cca_ops = tcp_revsw_cca_info[TCP_REVSW_CCA_STANDARD]->cca_ops;
+	if ((tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE)) &&
+		(sk->sk_state == TCP_SYN_RECV) && (tp->rx_opt.tstamp_ok == 1))
+		cca = TCP_REVSW_CCA_RBE;
+
+	ca->tcp_revsw_cca = cca;
+	cca_ops = tcp_revsw_cca_info[cca]->cca_ops;
 
 	if (cca_ops->init)
 		cca_ops->init(sk);
