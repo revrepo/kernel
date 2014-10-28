@@ -87,6 +87,7 @@ struct tcp_revsw_sysctl_data {
 	int cn_entries;
 	int fc_entries;
 	int max_cl_entries;
+	int supported_cca;
 };
 
 extern struct ctl_table revsw_ctl_table[];

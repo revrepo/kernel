@@ -18,6 +18,7 @@
 #include <linux/spinlock.h>
 #include <net/tcp.h>
 #include "tcp_revsw.h"
+#include "tcp_revsw_session_db.h"
 
 #define REVSW_RWND_MPLR_MIN		1
 #define REVSW_RWND_MPLR_MAX		5
@@ -72,6 +73,7 @@ struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.cn_entries = 0,
 	.fc_entries = 0,
 	.max_cl_entries = 0,
+	.supported_cca = (1 << TCP_REVSW_CCA_STANDARD),
 };
 EXPORT_SYMBOL_GPL(tcp_revsw_sysctls);
 
@@ -189,6 +191,13 @@ struct ctl_table revsw_ctl_table[] = {
 		.proc_handler = &proc_dointvec,
 		.extra1 = &revsw_cl_entries_min,
 		.extra2 = &revsw_cl_entries_max,
+	},
+	{
+		.procname = "revsw_supported_cca",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &tcp_revsw_sysctls.supported_cca,
+		.proc_handler = &proc_dointvec,
 	},
 
 	{}
