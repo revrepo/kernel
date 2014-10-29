@@ -392,7 +392,6 @@ exit:
 	return cnt;
 
 }
-EXPORT_SYMBOL_GPL(tcp_session_get_act_cnt);
 
 /*
  * tcp_session_get_backoff_level
@@ -431,7 +430,6 @@ exit:
 
 	return bko_level;
 }
-EXPORT_SYMBOL_GPL(tcp_session_get_backoff_level);
 
 /********************* TCP Session Info Hash APIs ********************/
 
@@ -493,7 +491,6 @@ exit:
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(tcp_session_get_info);
 
 /**************** END Userspace TCP Session Info APIs ****************/
 
@@ -509,7 +506,6 @@ void tcp_session_register_ops(u32 cca_type, struct tcp_session_info_ops *ops)
 	if (cca_type < TCP_REVSW_CCA_MAX)
 		tcpsi_ops[cca_type] = ops;
 }
-EXPORT_SYMBOL_GPL(tcp_session_register_ops);
 
 /*
  * tcp_session_deregister_ops
@@ -519,7 +515,6 @@ void tcp_session_deregister_ops(u32 cca_type)
 	if (cca_type < TCP_REVSW_CCA_MAX)
 		tcpsi_ops[cca_type] = NULL;
 }
-EXPORT_SYMBOL_GPL(tcp_session_deregister_ops);
 
 /********************* TCP Session Info OPs APIs *********************/
 
@@ -564,7 +559,6 @@ void tcp_session_add(struct sock *sk, u8 cca_type)
 	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_add)
 		tcpsi_ops[cca_type]->session_add(sk, &session->info);
 }
-EXPORT_SYMBOL_GPL(tcp_session_add);
 
 /*
  * tcp_session_delete
@@ -613,7 +607,6 @@ void tcp_session_delete(struct sock *sk)
 
 	tcp_session_update_client(entry);
 }
-EXPORT_SYMBOL_GPL(tcp_session_delete);
 
 /*
  * tcp_session_get_info_ptr
@@ -631,7 +624,6 @@ struct tcp_session_info *tcp_session_get_info_ptr(struct sock *sk)
 
 	return &session->info;
 }
-EXPORT_SYMBOL_GPL(tcp_session_get_info_ptr);
 
 /*
  * tcp_session_get_cca_priv
@@ -646,7 +638,6 @@ u32 *tcp_session_get_cca_priv(struct sock *sk)
 
 	return session->cca_priv;
 }
-EXPORT_SYMBOL_GPL(tcp_session_get_cca_priv);
 
 /************************ END TCP Session APIs ***********************/
 
