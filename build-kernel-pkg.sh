@@ -2,14 +2,47 @@
 
 NJOBS=`getconf _NPROCESSORS_ONLN`
 
-cd linux
+linuxVersionFile="./linux/Makefile"
 
-if [ ! -e .config ]; then
-	if [ -e default_config ]; then
-		cp default_config .config
-	else
-		make xconfig || make menuconfig
-	fi
+# Get Linux version information
+version=$(awk '/^VERSION/ {print $3} ' $linuxVersionFile)
+patchlevel=$(awk '/^PATCHLEVEL/ {print $3} ' $linuxVersionFile)
+lsublevel=$(awk '/^SUBLEVEL/ {print $3} ' $linuxVersionFile)
+extraversion=$(awk '/^EXTRAVERSION/ {print $3} ' $linuxVersionFile)
+
+if [ "$extraversion" != "" ]; then
+	linuxVersion=$version.$patchlevel.$lsublevel$extraversion
+else
+	linuxVersion=$version.$patchlevel.$lsublevel
+fi
+
+revVersionFile="./revsw/tcp_revsw_version.h"
+
+# Get the RevSw Module version information
+major=$(awk '/TCP_REVSW_MAJOR/ {print $3} ' $revVersionFile)
+minor=$(awk '/TCP_REVSW_MINOR/ {print $3} ' $revVersionFile)
+rsublevel=$(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $revVersionFile)
+
+revVersion=$major.$minor.$rsublevel
+
+# Generate the signing key files if necessary and copy them over to the
+# the linux build directory
+cd license_keys
+./generate-keys.sh $linuxVersion
+cp Revsw-$linuxVersion.priv ../linux/signing_key.priv
+cp Revsw-$linuxVersion.x509 ../linux/signing_key.x509
+cp x509.genkey ../linux/.
+
+echo "copied over signature files"
+
+cd ../linux
+
+if [ ! -f .config ]; then
+        if [ -f default_config ]; then
+                cp default_config .config
+        else
+                make xconfig || make menuconfig
+        fi
 fi
 
 make -j$NJOBS INSTALL_MOD_STRIP=1 deb-pkg
@@ -18,25 +51,15 @@ cd ../revsw
 
 make ARCH=x86_64 -C ../linux M=$PWD
 
-../linux/scripts/sign-file sha512 ../linux/signing_key.priv ../linux/signing_key.x509 revsw.ko
+./build-revsw-pkg.sh $linuxVersion ../linux/scripts
 
 cd ..
 
 # Now package everything together in a tar file
+linuxImage=linux-image-$linuxVersion*.deb
+modImage=revsw/Revsw-modules-$revVersion-linux-$linuxVersion.tar
 
-imageFile=(linux-image-*.deb)
-modFiles=$(ls revsw/*.ko)
-
-if [ ! -f "$imageFile" ]; then
-        echo "Linux image file does NOT exist"
-        return
-fi
-
-version=${imageFile:12:17}
-
-# Ensure the install script is executable
-chmod +x revsw_mod_install.sh
-
-tar cvf Revsw-linux-$version-amd64.tar $imageFile $modFiles revsw_mod_install.sh 10-enable-revsw-tcp-module.conf
+tar cvf Revsw-linux-$linuxVersion-rev-$revVersion-amd64.tar $linuxImage $modImage revsw-install.sh
 
 rm *.deb
+
