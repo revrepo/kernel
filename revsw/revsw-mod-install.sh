@@ -2,15 +2,13 @@
 
 kern=$(uname -r)
 
-echo $kern
-
 # Ensure the extra directory exists for the
 # currently running kernel
 if [ ! -d "/lib/modules/$kern/extra" ]; then
 	mkdir /lib/modules/$kern/extra
 fi
 
-cp revsw/*.ko /lib/modules/$kern/extra
+cp *.ko /lib/modules/$kern/extra
 
 depmod -a
 modprobe revsw
