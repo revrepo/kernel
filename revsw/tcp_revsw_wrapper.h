@@ -46,6 +46,7 @@ struct tcp_revsw_cca_entry {
  * Congestion Control Algorithm Pointers - should be one
  * for every different RevSw algorithm.
  */
+extern struct tcp_revsw_cca_entry tcp_revsw_dummy_cca;
 extern struct tcp_revsw_cca_entry tcp_revsw_std_cca;
 extern struct tcp_revsw_cca_entry tcp_revsw_rbe_cca;
 

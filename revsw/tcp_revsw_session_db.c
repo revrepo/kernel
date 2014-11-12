@@ -18,7 +18,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
-#include "tcp_revsw.h"
+#include "tcp_revsw_wrapper.h"
 #include "tcp_revsw_session_db.h"
 
 #define TCP_SESSION_BLOCK_SIZE	300

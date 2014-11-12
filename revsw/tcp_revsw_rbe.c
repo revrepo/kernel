@@ -16,7 +16,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
-#include "tcp_revsw.h"
+#include "tcp_revsw_wrapper.h"
 #include "tcp_revsw_session_db.h"
 
 #include <linux/average.h>

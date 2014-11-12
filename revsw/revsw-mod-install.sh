@@ -11,7 +11,6 @@ fi
 cp *.ko /lib/modules/$kern/extra
 
 depmod -a
-modprobe revsw
 
 cp 10-enable-revsw-tcp-module.conf /etc/sysctl.d/.
 

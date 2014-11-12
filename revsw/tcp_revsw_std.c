@@ -18,7 +18,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
-#include "tcp_revsw.h"
+#include "tcp_revsw_wrapper.h"
 #include "tcp_revsw_session_db.h"
 
 #define TCP_REVSW_RTT_MIN   (HZ/20)	/* 50ms */
@@ -133,7 +133,7 @@ static void tcp_revsw_std_release(struct sock *sk)
 }
 
 /*
- * TCP Westwood
+ * @tcp_revsw_std_bw_rtt
  * Here limit is evaluated as Bw estimation*RTTmin (for obtaining it
  * in packets we use mss_cache). Rttmin is guaranteed to be >= 2
  * so avoids ever returning 0.
@@ -153,6 +153,9 @@ static u32 tcp_revsw_std_bw_rtt(const struct sock *sk)
 	return max_t(u32, tmp, 2);
 }
 
+/*
+ * @tcp_revsw_std_ssthresh
+ */
 static u32 tcp_revsw_std_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
@@ -180,7 +183,9 @@ static u32 tcp_revsw_std_ssthresh(struct sock *sk)
 	return max(ssthresh, ssthresh_more);
 }
 
-/* calculate the cubic root of x using a table lookup followed by one
+/* 
+ * @tcp_revsw_std_cubic_root
+ * calculate the cubic root of x using a table lookup followed by one
  * Newton-Raphson iteration.
  * Avg err ~= 0.195%
  */
@@ -232,9 +237,10 @@ static u32 tcp_revsw_std_cubic_root(u64 a)
 }
 
 /*
+ * @tcp_revsw_std_cubic_growth
  * Compute congestion window to use.
  */
-static inline void tcp_revsw_std_cubic_growth(struct revsw_std *ca, u32 cwnd)
+static void tcp_revsw_std_cubic_growth(struct revsw_std *ca, u32 cwnd)
 {
 	u32 delta, bic_target, max_cnt;
 	u64 offs, t;
@@ -334,10 +340,11 @@ static inline void tcp_revsw_std_cubic_growth(struct revsw_std *ca, u32 cwnd)
 }
 
 /*
+ * @tcp_revsw_std_cong_avoid_ai
  * In theory Linear increase is
  * tp->snd_cwnd += 1 / tp->snd_cwnd (or alternative w)
  */
-void tcp_revsw_std_cong_avoid_ai(struct tcp_sock *tp, u32 w)
+static void tcp_revsw_std_cong_avoid_ai(struct tcp_sock *tp, u32 w)
 {
 	if (tp->snd_cwnd_cnt >= w) {
 		if (tp->snd_cwnd < tp->snd_cwnd_clamp)
@@ -348,6 +355,9 @@ void tcp_revsw_std_cong_avoid_ai(struct tcp_sock *tp, u32 w)
 	}
 }
 
+/*
+ * @tcp_revsw_std_increase_cwin
+ */
 static void tcp_revsw_std_increase_cwin(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -366,16 +376,25 @@ static void tcp_revsw_std_increase_cwin(struct sock *sk, u32 ack, u32 in_flight)
 	}
 }
 
+/*
+ * @tcp_revsw_std_cong_avoid
+ */
 static void tcp_revsw_std_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	tcp_revsw_std_increase_cwin(sk, ack, in_flight);
 }
 
-u32 tcp_revsw_std_min_cwnd(const struct sock *sk)
+/*
+ * @tcp_revsw_std_min_cwnd
+ */
+static u32 tcp_revsw_std_min_cwnd(const struct sock *sk)
 {
 	return tcp_revsw_std_bw_rtt(sk);
 }
 
+/*
+ * @tcp_revsw_std_state
+ */
 static void tcp_revsw_std_state(struct sock *sk, u8 new_state)
 {
 	if (new_state == TCP_CA_Loss) {
@@ -387,8 +406,7 @@ static void tcp_revsw_std_state(struct sock *sk, u8 new_state)
 			 *
 			 * TODO: or call tcp_revsw_std_bw_rtt ?
 			 */
-			tcp_sk(sk)->snd_cwnd = max(tcp_sk(sk)->snd_ssthresh/2,
-						   2U);
+			tcp_sk(sk)->snd_cwnd = max(tcp_sk(sk)->snd_ssthresh/2, 2U);
 		} else {
 			/* Must be really bad. */
 			tcp_sk(sk)->snd_cwnd = 1;
@@ -397,7 +415,7 @@ static void tcp_revsw_std_state(struct sock *sk, u8 new_state)
 }
 
 /*
- * @revsw_do_filter
+ * @tcp_revsw_std_do_filter
  * Low-pass filter. Implemented using constant coefficients.
  */
 static inline u32 tcp_revsw_std_do_filter(u32 a, u32 b)
@@ -405,6 +423,9 @@ static inline u32 tcp_revsw_std_do_filter(u32 a, u32 b)
 	return ((7 * a) + b) >> 3;
 }
 
+/*
+ * @tcp_revsw_std_filter
+ */
 static void tcp_revsw_std_filter(struct revsw_std *ca, u32 delta)
 {
 	/*
@@ -421,7 +442,7 @@ static void tcp_revsw_std_filter(struct revsw_std *ca, u32 delta)
 }
 
 /*
- * @revsw_pkts_acked
+ * @tcp_revsw_std_pkts_acked
  * Called after processing group of packets.
  * but all revsw needs is the last sample of srtt.
  */
@@ -434,7 +455,7 @@ static void tcp_revsw_std_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 }
 
 /*
- * @revsw_update_window
+ * @tcp_revsw_std_update_window
  * It updates RTT evaluation window if it is the right moment to do
  * it. If so it calls filter for evaluating bandwidth.
  */
@@ -477,7 +498,10 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 	}
 }
 
-static inline void tcp_revsw_std_update_rtt_min(struct revsw_std *ca)
+/*
+ * @tcp_revsw_std_update_rtt_min
+ */
+static void tcp_revsw_std_update_rtt_min(struct revsw_std *ca)
 {
 	if (ca->reset_rtt_min) {
 		ca->rtt_min = ca->rtt;
@@ -487,29 +511,11 @@ static inline void tcp_revsw_std_update_rtt_min(struct revsw_std *ca)
 }
 
 /*
- * @revsw_fast_bw
- * It is called when we are in fast path. In particular it is called when
- * header prediction is successful. In such case in fact update is
- * straight forward and doesn't need any particular care.
- */
-static inline void tcp_revsw_std_fast_bw(struct sock *sk)
-{
-	const struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
-
-	tcp_revsw_std_update_window(sk);
-
-	ca->bk += tp->snd_una - ca->snd_una;
-	ca->snd_una = tp->snd_una;
-	tcp_revsw_std_update_rtt_min(ca);
-}
-
-/*
- * @revsw_acked_count
+ * @tcp_revsw_std_acked_count
  * This function evaluates cumul_ack for evaluating bk in case of
  * delayed or partial acks.
  */
-static inline u32 tcp_revsw_std_acked_count(struct sock *sk)
+static u32 tcp_revsw_std_acked_count(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
@@ -540,6 +546,9 @@ static inline u32 tcp_revsw_std_acked_count(struct sock *sk)
 	return ca->cumul_ack;
 }
 
+/*
+ * @tcp_revsw_std_event
+ */
 static void tcp_revsw_std_event(struct sock *sk, enum tcp_ca_event event)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -548,7 +557,11 @@ static void tcp_revsw_std_event(struct sock *sk, enum tcp_ca_event event)
 
 	switch (event) {
 	case CA_EVENT_FAST_ACK:
-		tcp_revsw_std_fast_bw(sk);
+			tcp_revsw_std_update_window(sk);
+
+			ca->bk += tp->snd_una - ca->snd_una;
+			ca->snd_una = tp->snd_una;
+			tcp_revsw_std_update_rtt_min(ca);
 		break;
 
 	case CA_EVENT_COMPLETE_CWR:
@@ -579,8 +592,10 @@ static void tcp_revsw_std_event(struct sock *sk, enum tcp_ca_event event)
 	}
 }
 
-
-/* Extract info for TCP socket info provided via netlink. */
+/* 
+ * @tcp_revsw_std_info
+ * Extract info for TCP socket info provided via netlink. 
+ */
 static void tcp_revsw_std_info(struct sock *sk, u32 ext,
 			      struct sk_buff *skb)
 {
@@ -597,6 +612,9 @@ static void tcp_revsw_std_info(struct sock *sk, u32 ext,
 	}
 }
 
+/*
+ * @tcp_revsw_std_set_nwin_size
+ */
 static void tcp_revsw_std_set_nwin_size(struct sock *sk, u32 nwin)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -609,6 +627,9 @@ static void tcp_revsw_std_set_nwin_size(struct sock *sk, u32 nwin)
 		tp->snd_wnd = nwin;
 }
 
+/*
+ * @tcp_revsw_std_get_cwnd_quota
+ */
 static int tcp_revsw_std_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -654,9 +675,6 @@ static struct tcp_congestion_ops tcp_revsw_std __read_mostly = {
 	.handle_nagle_test = tcp_revsw_generic_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
 	.get_cwnd_quota = tcp_revsw_std_get_cwnd_quota,
-
-	.owner		= THIS_MODULE,
-	.name		= "revsw"
 };
 
 static void __init tcp_revsw_std_cca_init(void)

@@ -20,7 +20,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
-#include "tcp_revsw.h"
+#include "tcp_revsw_wrapper.h"
 #include "tcp_revsw_session_db.h"
 #include "tcp_revsw_version.h"
 
@@ -30,6 +30,7 @@ static struct ctl_table_header *revsw_ctl_table_hdr;
 
 struct tcp_revsw_cca_entry *tcp_revsw_cca_info[TCP_REVSW_CCA_MAX] =
 {
+	[TCP_REVSW_CCA_UNKNOWN] = &tcp_revsw_dummy_cca,
 	[TCP_REVSW_CCA_STANDARD] = &tcp_revsw_std_cca,
 	[TCP_REVSW_CCA_RBE] = &tcp_revsw_rbe_cca,
 };
@@ -41,12 +42,15 @@ static struct tcp_congestion_ops *
 tcp_revsw_get_cca_ops(const struct sock *sk)
 {
 	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk);
-	u8 cca_type = ca->tcp_revsw_cca;
+	u8 cca_type = TCP_REVSW_CCA_UNKNOWN;
 
-	if (tcp_revsw_cca_info[cca_type])
+	if (ca)
+		cca_type = ca->tcp_revsw_cca;
+
+	if (cca_type < TCP_REVSW_CCA_MAX)
 		return tcp_revsw_cca_info[cca_type]->cca_ops;
-
-	return NULL;
+	else
+		return tcp_revsw_cca_info[TCP_REVSW_CCA_UNKNOWN]->cca_ops;
 }
 
 /*
@@ -58,6 +62,8 @@ static void tcp_revsw_init(struct sock *sk)
 	struct tcp_congestion_ops *cca_ops;
 	struct tcp_sock *tp = tcp_sk(sk);
 	int cca = TCP_REVSW_CCA_STANDARD;
+
+	pr_err("%s: %p RevSw CCA initialization\n", __func__, sk);
 
 	/*
 	 * Currently there are two CCAs, STD and RBE.  RBE
@@ -84,6 +90,8 @@ static void tcp_revsw_init(struct sock *sk)
 static void tcp_revsw_release(struct sock *sk)
 {
 	struct tcp_congestion_ops *cca_ops = tcp_revsw_get_cca_ops(sk);
+
+	pr_err("%s: %p RevSw CCA cleanup\n", __func__, sk);
 
 	if (cca_ops->release)
 		cca_ops->release(sk);
