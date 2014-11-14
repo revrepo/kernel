@@ -63,8 +63,6 @@ static void tcp_revsw_init(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int cca = TCP_REVSW_CCA_STANDARD;
 
-	pr_err("%s: %p RevSw CCA initialization\n", __func__, sk);
-
 	/*
 	 * Currently there are two CCAs, STD and RBE.  RBE
 	 * will be selected as long as the following conditions
@@ -90,8 +88,6 @@ static void tcp_revsw_init(struct sock *sk)
 static void tcp_revsw_release(struct sock *sk)
 {
 	struct tcp_congestion_ops *cca_ops = tcp_revsw_get_cca_ops(sk);
-
-	pr_err("%s: %p RevSw CCA cleanup\n", __func__, sk);
 
 	if (cca_ops->release)
 		cca_ops->release(sk);
