@@ -15,9 +15,9 @@ else
 fi
 
 if [ "$2" != "" ]; then
-	signFileDir=$2
+	linuxDir=$2
 else
-	echo "No signature file location specified"
+	echo "No Linux directory specified"
 	exit
 fi
 
@@ -35,12 +35,19 @@ sublevel=$(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $modVersionFile)
 
 modVersion=$major.$minor.$sublevel
 
+make ARCH=x86_64 -C $linuxDir M=$PWD
+
 modFiles=$(ls *.ko)
 
-echo $signFileDir
-
 for file in $modFiles; do
-	$signFileDir/sign-file sha512 $privKey $x509Key $file
+	$linuxDir/scripts/sign-file sha512 $privKey $x509Key $file
 done
 
+sed "s/kVersion/$linuxVersion/" revsw-mod-install-tmpl.sh > revsw-mod-install.sh
+
+chmod +x revsw-mod-install.sh
+
 tar cvf Revsw-modules-$modVersion-linux-$linuxVersion.tar $modFiles revsw-mod-install.sh 10-enable-revsw-tcp-module.conf
+
+rm revsw-mod-install.sh
+

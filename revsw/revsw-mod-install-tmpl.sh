@@ -1,6 +1,6 @@
 #!/bin/sh -e
 
-kern=$(uname -r)
+kern=kVersion
 
 # Ensure the extra directory exists for the
 # currently running kernel
@@ -10,9 +10,7 @@ fi
 
 cp *.ko /lib/modules/$kern/extra
 
-depmod -a
+depmod -a $kern
 
 cp 10-enable-revsw-tcp-module.conf /etc/sysctl.d/.
-
-sysctl -p /etc/sysctl.d/10-enable-revsw-tcp-module.conf
 

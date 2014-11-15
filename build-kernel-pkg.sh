@@ -47,12 +47,9 @@ fi
 
 make -j$NJOBS INSTALL_MOD_STRIP=1 deb-pkg
 
+# Build and package the RevSw Module
 cd ../revsw
-
-make ARCH=x86_64 -C ../linux M=$PWD
-
-./build-revsw-pkg.sh $linuxVersion ../linux/scripts
-
+./build-revsw-pkg.sh $linuxVersion ../linux
 cd ..
 
 # Now package everything together in a tar file
