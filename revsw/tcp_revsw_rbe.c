@@ -1332,7 +1332,7 @@ static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
 };
 
 struct tcp_revsw_cca_entry tcp_revsw_rbe_cca __read_mostly = {
-	.revsw_cca = TCP_REVSW_CCA_STANDARD,
+	.revsw_cca = TCP_REVSW_CCA_RBE,
 	.cca_ops = &tcp_revsw_rbe,
 	.session_ops = &tcp_rbe_session_ops,
 };
