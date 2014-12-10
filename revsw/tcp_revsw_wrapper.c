@@ -62,6 +62,10 @@ static void tcp_revsw_init(struct sock *sk)
 	struct tcp_congestion_ops *cca_ops;
 	struct tcp_sock *tp = tcp_sk(sk);
 	int cca = TCP_REVSW_CCA_STANDARD;
+	u8 initiated = TCP_SESSION_SERVER_INITIATED;
+
+	if (sk->sk_state == TCP_SYN_RECV)
+		initiated = TCP_SESSION_CLIENT_INITIATED;
 
 	/*
 	 * Currently there are two CCAs, STD and RBE.  RBE
@@ -72,7 +76,8 @@ static void tcp_revsw_init(struct sock *sk)
 	 * - RBE is listed in the supported_cca sysctl
 	 */
 	if ((tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE)) &&
-		(sk->sk_state == TCP_SYN_RECV) && (tp->rx_opt.tstamp_ok == 1))
+		(initiated == TCP_SESSION_CLIENT_INITIATED) &&
+		(tp->rx_opt.tstamp_ok == 1))
 		cca = TCP_REVSW_CCA_RBE;
 
 	ca->tcp_revsw_cca = cca;
@@ -80,6 +85,8 @@ static void tcp_revsw_init(struct sock *sk)
 
 	if (cca_ops->init)
 		cca_ops->init(sk);
+
+	tcp_session_update_initiator(tp, initiated);
 }
 
 /*

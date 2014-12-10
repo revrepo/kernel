@@ -39,6 +39,7 @@ struct tcp_session_entry {
 	u32 total_pkts;
 	u32 rwin;
 	u32 iseq;
+	u8 initiated;
 };
 
 /*
@@ -362,6 +363,14 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 	}
 }
 
+void tcp_session_update_initiator(struct tcp_sock *tp, u8 initiated)
+{
+	struct tcp_session_entry *session = tp->session_info;
+
+	if (session)
+		session->initiated = initiated;
+}
+
 /*
  * tcp_session_get_act_cnt
  */
@@ -605,7 +614,15 @@ void tcp_session_delete(struct sock *sk)
 	else
 		session->total_pkts = 1;
 
-	tcp_session_update_client(entry);
+	if (session->initiated == TCP_SESSION_CLIENT_INITIATED)
+		tcp_session_update_client(entry);
+	else {
+		spin_lock_bh(&tcpsi_container.lock);
+		hlist_add_head(&entry->node, &tcpsi_container.hlist);
+		tcpsi_container.entries++;
+		tcp_revsw_sysctls.fc_entries++;
+		spin_unlock_bh(&tcpsi_container.lock);
+	}
 }
 
 /*

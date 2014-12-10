@@ -23,6 +23,12 @@
 #define TCP_CCA_PRIV_SIZE	(TCP_CCA_PRIV_UINTS * sizeof(u32))
 
 /*
+ * Definitions to indicate who initiated the connection
+ */
+#define TCP_SESSION_SERVER_INITIATED 0
+#define TCP_SESSION_CLIENT_INITIATED 1
+
+/*
  * RevSw Congestion Control Algorithms
  * UNKNOWN must always be 0
  */
@@ -62,6 +68,7 @@ struct tcp_session_info_ops {
 	void (*session_delete)(struct tcp_session_info *info, void *cca_priv);
 };
 
+extern void tcp_session_update_initiator(struct tcp_sock *tp, u8 initiated);
 extern u16 tcp_session_get_act_cnt(struct sock *sk);
 extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
 extern void tcp_session_register_ops(u32 cca_type,
