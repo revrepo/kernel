@@ -72,7 +72,7 @@ struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.cl_entries = 0,
 	.cn_entries = 0,
 	.fc_entries = 0,
-	.max_cl_entries = 0,
+	.max_cl_entries = REVSW_CL_ENTRIES_DEFAULT,
 	.supported_cca = (1 << TCP_REVSW_CCA_STANDARD),
 };
 EXPORT_SYMBOL_GPL(tcp_revsw_sysctls);
@@ -137,7 +137,7 @@ struct ctl_table revsw_ctl_table[] = {
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.data = &tcp_revsw_sysctls.rwin_scale,
-		.proc_handler = &proc_dointvec,
+		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &revsw_rwin_scale_min,
 		.extra2 = &revsw_rwin_scale_max,
 	},
@@ -188,7 +188,7 @@ struct ctl_table revsw_ctl_table[] = {
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.data = &tcp_revsw_sysctls.max_cl_entries,
-		.proc_handler = &proc_dointvec,
+		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &revsw_cl_entries_min,
 		.extra2 = &revsw_cl_entries_max,
 	},
