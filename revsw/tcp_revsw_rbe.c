@@ -314,11 +314,12 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 	rbe = &__rbe;
 
 	if (rbe->bytes_sent_this_leak < rbe->sending_rate) {
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
-			"** %s: Quota is not fully utilized\n",
-			__func__);
-
 		if (tcp_send_head(sk)) {
+
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+				"** %s: Quota is not fully utilized\n",
+				__func__);
+
 			bh_lock_sock(sk);
 			/* TODO: Should I hold? */
 			sock_hold(sk);
