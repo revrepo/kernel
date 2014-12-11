@@ -883,12 +883,14 @@ static inline void tcp_revsw_rbe_common_ack(struct tcp_sock *tp,
 {
 	if (rbe->rbe_state == TCP_REVSW_RBE_STATE_SACK &&
 			((tcp_time_stamp - rbe->sack_time_stamp) >
-			(tp->srtt >> 3))) {
-		/*
-		 * Throttle sending_rate only for one RTT after
-		 * SACK
+			((tp->srtt >> 3) - ((tp->srtt >> 3) >> 2)))) {
+			
+
+		/* 
+		 * TODO: Throttling sending_rate for < 1 RTT (75% of RTT)
+		 * after SACK. It was 1 RTT before. This is 
+		 * being too aggresive. Review this.
 		 */
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "\n\t\t RTT\n\n");
 		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_SACK_DONE);
 	}
 
@@ -931,11 +933,19 @@ static inline void tcp_revsw_rbe_handle_slow_ack(struct tcp_sock *tp,
 	if (tp->sacked_out != rbe->last_sacked_out) {
 		if (tp->sacked_out &&
 			((tcp_time_stamp - rbe->sack_time_stamp) >
-				(tp->srtt >> 3))) {
-			/* Fresh SACK */
+			((tp->srtt >> 3) + ((tp->srtt >> 3) >> 2)))) {
+			/*
+			 * Fresh SACK
+			 * TODO: After 1 SACK, we are not throttling
+			 * sending_rate for subsequent SACKs for 1.25 RTT
+			 * instead of 1 RTT. Too Aggressive?
+			 */
+			LOG_IT(TCP_REVSW_RBE_LOG_INFO, 
+				"\t\tFresh SACK. Current-State before changing = %u\n\n",
+				rbe->rbe_state);
+			
 			TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FORCE_DRAIN);
 			rbe->sack_time_stamp = tcp_time_stamp;
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO, "\t\tSACK\n\n");
 		}
 
 		LOG_IT(TCP_REVSW_RBE_LOG_SACK, "sacked_out %u. ack %u ..",
@@ -1011,6 +1021,11 @@ static inline int tcp_revsw_rbe_remaining_leak_quota(struct tcp_sock *tp,
 			quota = rbe->sending_rate -
 					rbe->bytes_sent_this_leak;
 	} else {
+		/* 
+		 * TODO: Session DB is now always allocated.
+		 * Do we need to defer init_timer () ? 
+		 * Btw, Does no harm.
+		 */
 		if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
 			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 			       "%s: Session DB not yet allocated\n", __func__);
