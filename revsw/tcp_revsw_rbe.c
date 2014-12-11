@@ -347,7 +347,7 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 
 	if (tcp_send_head(sk)) {
 		if (mod_timer(&rbe->timer, jiffies +
-			msecs_to_jiffies(TCP_REVSW_RBE_MSECS_PER_LEAK))) {
+			msecs_to_jiffies(TCP_REVSW_RBE_LEAK_QUOTA_TIMER))) {
 			/* TODO: Handle error */
 			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
 				"%s: Error modifying timer\n", __func__);
