@@ -252,9 +252,9 @@ static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
 
 	if (granularity >= 0 && granularity < 2) {
 		granularity = 1;
-	} else if (granularity >= 2 && granularity < 6) {
+	} else if (granularity >= 2 && granularity < 7) {
 		granularity = 4;
-	} else if (granularity >= 6 && granularity < 14) {
+	} else if (granularity >= 7 && granularity < 14) {
 		granularity = 10;
 	} else {
 		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
