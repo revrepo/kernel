@@ -170,9 +170,10 @@ struct revsw_rbe {
 
 #define TCP_REVSW_RBE_SET_STATE(rbe, state)  { \
 	if (rbe->rbe_state != state)	\
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "	%s to %s\n", \
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "	%s to %s. Sending-rate = %u\n", \
 			tcp_revsw_rbe_state_string[rbe->rbe_state],	\
-			tcp_revsw_rbe_state_string[state]);	\
+			tcp_revsw_rbe_state_string[state],	\
+			rbe->sending_rate);	\
 	rbe->rbe_state = state;	\
 }
 
