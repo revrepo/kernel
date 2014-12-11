@@ -113,8 +113,6 @@ struct sess_priv {
 	struct timer_list rbe_timer;
 
 	u32 rbe_T;		/* number of bytes. */
-	u32 rbe_Bmax;		/* number of bytes. */
-	u32 rbe_Bmin;		/* number of bytes. */
 	u32 rbe_rdmin_tsval;
 	u32 rbe_rdmin_tsecr;
 
@@ -147,14 +145,15 @@ struct revsw_rbe {
 
 #define timer			s->rbe_timer
 #define Tbuff			s->rbe_T
-#define Bmax			s->rbe_Bmax
-#define Bmin			s->rbe_Bmin
 #define rdmin_tsval		s->rbe_rdmin_tsval
 #define rdmin_tsecr		s->rbe_rdmin_tsecr
 #define receiving_rate		s->rbe_receiving_rate
 #define tsk			s->tsk
 
 };
+
+#define TCP_REVSW_RBE_BMAX(rbe)      (rbe->Tbuff + (rbe->Tbuff >> 1))
+#define TCP_REVSW_RBE_BMIN(rbe)      (rbe->Tbuff - (rbe->Tbuff >> 1))
 
 #define LOG_IT(loglevel, format, ...)  { \
 	if (tcp_revsw_sysctls.rbe_loglevel && tcp_revsw_sysctls.rbe_loglevel >= loglevel)  { \
@@ -190,13 +189,11 @@ struct revsw_rbe {
 #define TCP_REVSW_RBE_CALC_TBUFF(tp, rbe)	do { \
 	rbe->Tbuff = (u32)ewma_read(&rbe->receiving_rate) * \
 			rbe->rtt_min / 1000; \
-	rbe->Bmax = rbe->Tbuff + (rbe->Tbuff >> 1); /* t + t/2 */\
-	rbe->Bmin = rbe->Tbuff - (rbe->Tbuff >> 1); /* t - t/2 */\
 	LOG_IT(TCP_REVSW_RBE_LOG_INFO,	\
 			"T %u, Bmax %u, Bmin %u, r_rate = %u\n",	\
 			rbe->Tbuff,	\
-			rbe->Bmax,	\
-			rbe->Bmin,	\
+			TCP_REVSW_RBE_BMAX(rbe),	\
+			TCP_REVSW_RBE_BMIN(rbe),	\
 			(u32) ewma_read(&rbe->receiving_rate));	\
 } while (0)
 
@@ -447,7 +444,7 @@ static inline void tcp_revsw_rbe_fill_buffer(struct tcp_sock *tp,
 	u32 delta_sending_rate; /* per second */
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
-	delta_sending_rate = 1000 * (rbe->Bmax - rbe->Tbuff) /
+	delta_sending_rate = 1000 * (TCP_REVSW_RBE_BMAX(rbe) - rbe->Tbuff) /
 			     srtt_msecs;
 
 	rbe->sending_rate = (u32) ewma_read(&rbe->receiving_rate);
@@ -476,7 +473,7 @@ static inline void tcp_revsw_rbe_drain_buffer(struct tcp_sock *tp,
 		return;
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
-	delta_sending_rate = 1000 * (rbe->Tbuff - rbe->Bmin) /
+	delta_sending_rate = 1000 * (rbe->Tbuff - TCP_REVSW_RBE_BMIN(rbe)) /
 			     srtt_msecs;
 
 	rbe->sending_rate = (u32) ewma_read(&rbe->receiving_rate);
@@ -619,7 +616,7 @@ static inline void tcp_revsw_rbe_enter_monitor_mode(struct tcp_sock *tp,
 	/* Reset some variables */
 	rbe->ack_r1 = rbe->ts_r1 = 0;
 	rbe->ack_r2 = rbe->ts_r2 = 0;
-	rbe->Tbuff = rbe->Bmax = rbe->Bmin = 0;
+	rbe->Tbuff = 0;
 
 	rbe->rtt_min = 0;
 	rbe->rdmin_tsval = rbe->rdmin_tsecr = 0;
