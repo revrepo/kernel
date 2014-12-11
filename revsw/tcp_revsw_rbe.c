@@ -113,6 +113,8 @@ struct sess_priv {
 	struct timer_list rbe_timer;
 
 	u32 rbe_T;		/* number of bytes. */
+	u32 tbuff_acked_data;
+	u32 tbuff_ticks;
 	u32 rbe_rdmin_tsval;
 	u32 rbe_rdmin_tsecr;
 
@@ -145,6 +147,8 @@ struct revsw_rbe {
 
 #define timer			s->rbe_timer
 #define Tbuff			s->rbe_T
+#define tbuff_acked_data	s->tbuff_acked_data
+#define tbuff_ticks		s->tbuff_ticks
 #define rdmin_tsval		s->rbe_rdmin_tsval
 #define rdmin_tsecr		s->rbe_rdmin_tsecr
 #define receiving_rate		s->rbe_receiving_rate
@@ -186,17 +190,6 @@ struct revsw_rbe {
 	__rbe.s = (struct sess_priv *)tcp_session_get_cca_priv(sk); \
 }
 
-#define TCP_REVSW_RBE_CALC_TBUFF(tp, rbe)	do { \
-	rbe->Tbuff = (u32)ewma_read(&rbe->receiving_rate) * \
-			rbe->rtt_min / 1000; \
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO,	\
-			"T %u, Bmax %u, Bmin %u, r_rate = %u\n",	\
-			rbe->Tbuff,	\
-			TCP_REVSW_RBE_BMAX(rbe),	\
-			TCP_REVSW_RBE_BMIN(rbe),	\
-			(u32) ewma_read(&rbe->receiving_rate));	\
-} while (0)
-
 /* TODO: What do we do when rbe->estimated_tick_gra  is 0 ? */
 #define TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, ticks, in_msecs)	do { \
 	if (rbe->estimated_tick_gra > 0)	\
@@ -204,6 +197,41 @@ struct revsw_rbe {
 	else	\
 		in_msecs = jiffies_to_msecs(ticks);	\
 } while (0)
+
+/*
+ * @tcp_rbe_estimate_tbuff
+ *
+ * Estimate Network Buffer
+ */
+static inline void tcp_rbe_estimate_tbuff(struct revsw_rbe *rbe)
+{
+	u32 time_in_milisecs;
+
+	TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, rbe->tbuff_ticks, 
+							time_in_milisecs);
+	if (time_in_milisecs == 0) {
+	       /* TODO: Handle this in some other way? */
+	       LOG_IT(TCP_REVSW_RBE_LOG_ERR, "%s: NOT GOOD\n", __func__);
+	       return;
+	}
+
+	/* 
+	 * RRATE is in bytes/sec 	
+	 * RRATE 	= ((1000*rbe->tbuff_acked_data) / time_in_milisecs);
+	 * rbe->Tbuff 	= ((RRATE * rbe->rtt_min) / 1000);
+	 * Simplified formula below
+	 */
+
+	rbe->Tbuff = (rbe->tbuff_acked_data * rbe->rtt_min) / time_in_milisecs;
+
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+		       "T %u, Bmax %u, Bmin %u, r_rate = %u\n",
+		       rbe->Tbuff,
+		       TCP_REVSW_RBE_BMAX(rbe),
+		       TCP_REVSW_RBE_BMIN(rbe),
+		       (u32) ewma_read(&rbe->receiving_rate));
+	return;
+}
 
 /*
  * @tcp_revsw_rbe_estimate_granularity
@@ -409,7 +437,7 @@ static u32 tcp_revsw_rbe_receive_rate(struct tcp_sock *tp,
 		rbe->ts_r2	= tp->rx_opt.rcv_tsval;
 		rbe->ack_r2	= ack + sacked_bytes;
 		if (tcp_revsw_rbe_estimate_granularity(tp, rbe))
-			TCP_REVSW_RBE_CALC_TBUFF(tp, rbe);
+			tcp_rbe_estimate_tbuff(rbe);
 
 		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
 			rbe->sending_rate, ack,
@@ -428,8 +456,7 @@ static u32 tcp_revsw_rbe_receive_rate(struct tcp_sock *tp,
 			ewma_read(&rbe->receiving_rate),
 			rbe->sending_rate);
 
-	return (u32) r_rate;
-
+	return acked_data;
 }
 
 /*
@@ -688,8 +715,12 @@ static inline void tcp_revsw_rbe_enter_bm_mode(struct tcp_sock *tp,
 	rbe->ts_r2 = tp->rx_opt.rcv_tsval;
 	rbe->ack_r2 = ack;
 
-	tcp_revsw_rbe_receive_rate(tp, rbe, ack);
-	TCP_REVSW_RBE_CALC_TBUFF(tp, rbe);
+	/* First time we are estimating receive rate */
+
+	rbe->tbuff_ticks = tp->rx_opt.rcv_tsval - rbe->ts_r1;
+	rbe->tbuff_acked_data = tcp_revsw_rbe_receive_rate(tp, rbe, ack);
+
+	tcp_rbe_estimate_tbuff(rbe);
 
 	rbe->sending_rate = (u32) ewma_read(&rbe->receiving_rate);
 	TCP_REVSW_RBE_SET_MODE(rbe, TCP_REVSW_RBE_MODE_BM);
