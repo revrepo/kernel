@@ -1242,7 +1242,21 @@ static void tcp_revsw_rbe_state(struct sock *sk, u8 new_state)
 	rbe = &__rbe;
 
 	if (new_state == TCP_CA_Loss) {
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "TCP_CA_Loss State\n");
+		if ((tcp_time_stamp - tcp_sk(sk)->retrans_stamp) >
+			(tcp_sk(sk)->srtt >> 3)) {
+			/*
+			 * There has not been any loss in last RTT,
+			 * ignore if we are already in SACK mode.
+			 * TODO: This is aggressive. Review it.
+			 */
+			if (rbe->rbe_state == TCP_REVSW_RBE_STATE_SACK) {
+				LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+					"\n !!!! TCP_CA_Loss IGNORED\n\n");
+				return;
+			}
+		}
+
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "!!!! TCP_CA_Loss State\n");
 		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FORCE_DRAIN);
 		rbe->sack_time_stamp = tcp_time_stamp;
 		tcp_revsw_rbe_drain_buffer(tp, rbe);
