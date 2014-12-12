@@ -511,6 +511,10 @@ static inline void tcp_revsw_rbe_drain_buffer(struct tcp_sock *tp,
 	else
 		rbe->sending_rate -= delta_sending_rate;
 
+	/* Min drain rate = 10 packets. TODO: Review this */
+	if (rbe->sending_rate < (10 * tp->mss_cache))
+		rbe->sending_rate = 10 * tp->mss_cache;
+
 	if (rbe->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN) {
 		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
 			"%s: Reduced sending_rate to %u. delta = %u\n",
