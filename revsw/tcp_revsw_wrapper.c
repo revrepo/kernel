@@ -77,7 +77,8 @@ static void tcp_revsw_init(struct sock *sk)
 	 */
 	if ((tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE)) &&
 		(initiated == TCP_SESSION_CLIENT_INITIATED) &&
-		(tp->rx_opt.tstamp_ok == 1))
+		(tp->rx_opt.tstamp_ok == 1) &&
+		(tp->rx_opt.sack_ok & TCP_SACK_SEEN))
 		cca = TCP_REVSW_CCA_RBE;
 
 	ca->tcp_revsw_cca = cca;
