@@ -68,17 +68,11 @@ static void tcp_revsw_init(struct sock *sk)
 		initiated = TCP_SESSION_CLIENT_INITIATED;
 
 	/*
-	 * Currently there are two CCAs, STD and RBE.  RBE
-	 * will be selected as long as the following conditions
-	 * are met:
-	 * - this box is not the one who initiated the connection
-	 * - the client requesting the connection has TCP timestamps enabled
-	 * - RBE is listed in the supported_cca sysctl
+	 * Currently there are two CCAs, STD and RBE. Check whether or
+	 * not this connection has the proper settings to use RBE.  If
+	 * no then use the STD CCA. 
 	 */
-	if ((tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE)) &&
-		(initiated == TCP_SESSION_CLIENT_INITIATED) &&
-		(tp->rx_opt.tstamp_ok == 1) &&
-		(tp->rx_opt.sack_ok & TCP_SACK_SEEN))
+	if (tcp_revsw_cca_info[TCP_REVSW_CCA_RBE]->cca_validate_use(sk, initiated))
 		cca = TCP_REVSW_CCA_RBE;
 
 	ca->tcp_revsw_cca = cca;

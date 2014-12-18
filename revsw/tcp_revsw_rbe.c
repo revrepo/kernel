@@ -1397,6 +1397,30 @@ static void tcp_rbe_session_delete_cb(struct tcp_session_info *info,
 	del_timer(&s->rbe_timer);
 }
 
+static bool tcp_revsw_rbe_validate_use(struct sock *sk, u8 initiated)
+{
+	const struct inet_sock *inet = inet_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	/*
+	 * RBE will be selected as long as the following conditions
+	 * are met:
+	 * - RBE is listed in the supported_cca sysctl
+	 * - the connection is client initiated
+	 * - client is not the LOCAL HOST
+	 * - client has enabled TCP timestamps
+	 * - client has enabled SACKs
+	 */
+	if ((tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE)) &&
+	    (initiated == TCP_SESSION_CLIENT_INITIATED) &&
+	    (inet->inet_daddr != TCP_REVSW_LOCALHOST) &&
+	    (tp->rx_opt.tstamp_ok == 1) &&
+	    (tp->rx_opt.sack_ok & TCP_SACK_SEEN))
+		return true;
+
+	return false;
+}
+
 static struct tcp_congestion_ops tcp_revsw_rbe __read_mostly = {
 	.flags		= TCP_CONG_RTT_STAMP,
 	.init		= tcp_revsw_rbe_init,
@@ -1426,6 +1450,7 @@ static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
 
 struct tcp_revsw_cca_entry tcp_revsw_rbe_cca __read_mostly = {
 	.revsw_cca = TCP_REVSW_CCA_RBE,
+	.cca_validate_use = tcp_revsw_rbe_validate_use,
 	.cca_ops = &tcp_revsw_rbe,
 	.session_ops = &tcp_rbe_session_ops,
 };
