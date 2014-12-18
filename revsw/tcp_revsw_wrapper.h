@@ -68,7 +68,7 @@ extern struct tcp_revsw_cca_entry tcp_revsw_rbe_cca;
 #define REVSW_INIT_CWND_MAX		100
 
 #define REVSW_RWIN_SCALE_MIN		0
-#define REVSW_RWIN_SCALE_MAX		sizeof(int)
+#define REVSW_RWIN_SCALE_MAX		400
 
 #define REVSW_CL_ENTRIES_MIN	1
 #define REVSW_CL_ENTRIES_MAX	10000
