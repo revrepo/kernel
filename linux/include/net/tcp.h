@@ -371,6 +371,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			  const struct tcphdr *th, unsigned int len);
 void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			 const struct tcphdr *th, unsigned int len);
+void tcp_data_snd_check(struct sock *sk);
 void tcp_rcv_space_adjust(struct sock *sk);
 void tcp_cleanup_rbuf(struct sock *sk, int copied);
 int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp);
@@ -808,6 +809,21 @@ struct tcp_congestion_ops {
 	void (*pkts_acked)(struct sock *sk, u32 num_acked, s32 rtt_us);
 	/* get info for inet_diag (optional) */
 	void (*get_info)(struct sock *sk, u32 ext, struct sk_buff *skb);
+	/* SYN post config */
+	void (*syn_post_config)(struct sock *sk);
+	/* set new window size */
+	void (*set_nwin_size)(struct sock *sk, u32 nwin);
+	/* handle nagle test */
+	bool (*handle_nagle_test)(struct sock *sk, struct sk_buff *skb,
+				  unsigned int mss_now, int nonagle);
+	/* Session Info handler */
+	int (*get_session_info)(struct sock *sk, unsigned char *sinfo, int *len);
+	/* get congestion window quota*/
+	int (*get_cwnd_quota)(struct sock *sk, const struct sk_buff *skb);
+	/* handle send window test */
+	bool (*snd_wnd_test)(const struct tcp_sock *tp,
+			     const struct sk_buff *skb,
+			     unsigned int cur_mss);
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;

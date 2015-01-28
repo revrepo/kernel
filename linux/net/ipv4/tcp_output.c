@@ -1832,6 +1832,7 @@ static int tcp_mtu_probe(struct sock *sk)
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
@@ -1859,7 +1860,11 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (unlikely(tp->repair) && tp->repair_queue == TCP_SEND_QUEUE)
 			goto repair; /* Skip network transmission */
 
-		cwnd_quota = tcp_cwnd_test(tp, skb);
+		if (icsk->icsk_ca_ops->get_cwnd_quota)
+			cwnd_quota = icsk->icsk_ca_ops->get_cwnd_quota(sk, skb);
+		else
+			cwnd_quota = tcp_cwnd_test(tp, skb);
+
 		if (!cwnd_quota) {
 			if (push_one == 2)
 				/* Force out a loss probe pkt. */
@@ -1868,14 +1873,28 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 		}
 
-		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
-			break;
+		if (icsk->icsk_ca_ops->snd_wnd_test) {
+			if (unlikely(!icsk->icsk_ca_ops->snd_wnd_test(tp, skb,
+								      mss_now)))
+				break;
+		} else {
+			if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
+				break;
+		}
 
 		if (tso_segs == 1) {
-			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
-						     (tcp_skb_is_last(sk, skb) ?
-						      nonagle : TCP_NAGLE_PUSH))))
-				break;
+			if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->handle_nagle_test) {
+				if (unlikely(!icsk->icsk_ca_ops->handle_nagle_test(sk,
+								skb, mss_now,
+								(tcp_skb_is_last(sk, skb) ?
+								nonagle : TCP_NAGLE_PUSH))))
+					break;
+			} else {
+				if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
+							     (tcp_skb_is_last(sk, skb) ?
+							     nonagle : TCP_NAGLE_PUSH))))
+					break;
+			}
 		} else {
 			if (!push_one && tcp_tso_should_defer(sk, skb))
 				break;

@@ -2507,6 +2507,16 @@ static void tcp_cwnd_reduction(struct sock *sk, const int prior_unsacked,
 
 	sndcnt = max(sndcnt, (fast_rexmit ? 1 : 0));
 	tp->snd_cwnd = tcp_packets_in_flight(tp) + sndcnt;
+
+	if ((tcp_send_head(sk) == NULL) &&
+	    (inet_csk(sk)->icsk_ca_state != TCP_CA_Loss)) {
+		/*
+		 * We have no unsent data to send and we are not in "loss" state. This may be case
+		 * of tail drop. Increase the CWIN from what it is now as PRR would have it close
+		 * to packets_in_flight
+		 */
+		tcp_sk(sk)->snd_cwnd += tcp_sk(sk)->fackets_out;
+	}
 }
 
 static inline void tcp_end_cwnd_reduction(struct sock *sk)
@@ -3254,6 +3264,7 @@ static inline bool tcp_may_update_window(const struct tcp_sock *tp,
 static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32 ack,
 				 u32 ack_seq)
 {
+	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
@@ -3266,7 +3277,10 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 		tcp_update_wl(tp, ack_seq);
 
 		if (tp->snd_wnd != nwin) {
-			tp->snd_wnd = nwin;
+			if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->set_nwin_size)
+				icsk->icsk_ca_ops->set_nwin_size(sk, nwin);
+			else
+				tp->snd_wnd = nwin;
 
 			/* Note, it is the only place, where
 			 * fast path is recovered for sending TCP.
@@ -4780,11 +4794,12 @@ static void tcp_check_space(struct sock *sk)
 	}
 }
 
-static inline void tcp_data_snd_check(struct sock *sk)
+void tcp_data_snd_check(struct sock *sk)
 {
 	tcp_push_pending_frames(sk);
 	tcp_check_space(sk);
 }
+EXPORT_SYMBOL(tcp_data_snd_check);
 
 /*
  * Check if sending an ack is needed.
@@ -5773,6 +5788,9 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 		tcp_initialize_rcv_mss(sk);
 		tcp_fast_path_on(tp);
+
+		if (icsk->icsk_ca_ops && icsk->icsk_ca_ops->syn_post_config)
+			icsk->icsk_ca_ops->syn_post_config(sk);
 		break;
 
 	case TCP_FIN_WAIT1: {
