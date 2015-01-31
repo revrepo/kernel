@@ -334,6 +334,8 @@ static void tcp_revsw_set_nwin_size(struct sock *sk, u32 nwin)
 
 	if (cca_ops->set_nwin_size)
 		cca_ops->set_nwin_size(sk, nwin);
+	else
+		tcp_sk(sk)->snd_wnd = nwin;
 }
 
 /*
