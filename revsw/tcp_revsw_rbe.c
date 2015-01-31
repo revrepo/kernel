@@ -64,6 +64,12 @@
 #define TCP_REVSW_RBE_HONOR_NO_REXMIT (TCP_REVSW_RBE_HONOR_RCV_WND + 2)
 #define TCP_REVSW_RBE_IGNORE_RCV_WND (TCP_REVSW_RBE_HONOR_RCV_WND + 3)
 
+#define TCP_REVSW_RBE_SS_DEFAULT	3
+#define TCP_REVSW_RBE_SS_LVL1		TCP_REVSW_RBE_SS_DEFAULT + 1
+#define TCP_REVSW_RBE_SS_LVL2		TCP_REVSW_RBE_SS_DEFAULT + 2
+#define TCP_REVSW_RBE_SS_LVL3		TCP_REVSW_RBE_SS_DEFAULT + 3
+#define TCP_REVSW_RBE_SS_LVL4		TCP_REVSW_RBE_SS_DEFAULT + 4
+
 const char *tcp_revsw_rbe_mode_string[TCP_REVSW_RBE_MODE_UNUSED_MAX] = {
 	"TCP_REVSW_RBE_MODE_INVALID", "TCP_REVSW_RBE_MODE_INIT", "TCP_RBE_MODE_BM",
 	"TCP_REVSW_RBE_MODE_PRE_MONITOR", "TCP_REVSW_RBE_MODE_MONITOR"
@@ -102,6 +108,7 @@ struct icsk_priv {
 	u16 rbe_estimated_tick_gra;
 	u8 rbe_mode;
 	u8 rbe_state;
+	u8 ss_growth_factor;
 };
 
 struct sess_priv {
@@ -144,6 +151,7 @@ struct revsw_rbe {
 #define estimated_tick_gra	i->rbe_estimated_tick_gra
 #define rbe_mode		i->rbe_mode
 #define rbe_state		i->rbe_state
+#define ss_growth_factor	i->ss_growth_factor
 
 #define timer			s->rbe_timer
 #define Tbuff			s->rbe_T
@@ -367,8 +375,13 @@ static inline int tcp_revsw_rbe_init_timer(struct revsw_rbe *rbe, struct sock *s
 	if (rbe->tsk == sk)
 		return 0;
 
-	/* TODO: Instead of memset, just set required variables. */
-	memset(&rbe->timer, 0, sizeof(struct sess_priv));
+	/* TODO: Check if we need to initialize all these variables */
+	rbe->Tbuff = 0;
+	rbe->tbuff_acked_data = 0;
+	rbe->tbuff_ticks = 0;
+	rbe->rdmin_tsval = 0;
+	rbe->rdmin_tsecr = 0;
+
 	/* TODO: 1024 and 2, right values? */
 	ewma_init(&rbe->receiving_rate, 1024, 2);
 
@@ -1138,9 +1151,9 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 
 
 	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
-		"cwnd_quota %d, flight %u, cwnd %u ; snd_cwnd %u\n\n",
+		"cwnd_quota %d, flight %u ; snd_wnd  %u ; snd_cwnd %u\n\n",
 		cwnd_quota, in_flight,
-		rbe->sending_rate / max_t(u32, 1, tp->mss_cache),
+		tp->snd_wnd,
 		tp->snd_cwnd);
 
 	return cwnd_quota;
@@ -1154,15 +1167,44 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 static void tcp_revsw_rbe_init(struct sock *sk)
 {
 	struct revsw_rbe *rbe, __rbe;
+	u32 bko_level;
 
 	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
 
-	rbe->syn_ack_tsecr = tcp_sk(sk)->rx_opt.rcv_tsecr;
+	bko_level = tcp_session_get_backoff_level(sk);
+	
+	rbe->syn_ack_tsecr = tcp_time_stamp;
 
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s\n", __func__);
+	switch (bko_level) {
+	case TCP_REVSW_BKO_OK:
+		rbe->ss_growth_factor = TCP_REVSW_RBE_SS_LVL4;
+		break;
+
+	case TCP_REVSW_BKO_LVL1:
+		rbe->ss_growth_factor = TCP_REVSW_RBE_SS_LVL3;
+		break;
+
+	case TCP_REVSW_BKO_LVL2:
+		rbe->ss_growth_factor = TCP_REVSW_RBE_SS_LVL2;
+		break;
+
+	case TCP_REVSW_BKO_LVL3:
+		rbe->ss_growth_factor = TCP_REVSW_RBE_SS_LVL1;
+		break;
+
+	case TCP_REVSW_BKO_LVL4:
+		rbe->ss_growth_factor = TCP_REVSW_RBE_SS_DEFAULT;
+		break;
+	default:
+		rbe->ss_growth_factor = TCP_REVSW_RBE_SS_DEFAULT;
+		break;
+	}
+
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s Growth Factor: %u\n", 
+					__func__, rbe->ss_growth_factor);
 }
 
 /*
