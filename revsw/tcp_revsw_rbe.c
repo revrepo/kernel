@@ -1153,7 +1153,15 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
  */
 static void tcp_revsw_rbe_init(struct sock *sk)
 {
+	struct revsw_rbe *rbe, __rbe;
+
 	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
+
+	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
+	rbe = &__rbe;
+
+	rbe->syn_ack_tsecr = tcp_sk(sk)->rx_opt.rcv_tsecr;
+
 	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s\n", __func__);
 }
 
@@ -1296,35 +1304,6 @@ static void tcp_revsw_rbe_event(struct sock *sk, enum tcp_ca_event event)
 }
 
 /*
- * @tcp_revsw_rbe_syn_post_config
- *
- * Use this function to calculate first RTT which inturn is used to
- * estimate client's TCP timestamp. (To be implemented)
- */
-static void tcp_revsw_rbe_syn_post_config(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct revsw_rbe *rbe, __rbe;
-
-	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
-	rbe = &__rbe;
-
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "%s: Entering\n", __func__);
-
-	if (!tp->rx_opt.tstamp_ok) {
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
-		"%s: Timestamp not enabled on client . RBE can not be CCA for this connection\n",
-		__func__);
-		rbe->syn_ack_tsecr = 0;
-	} else {
-		/* TODO: SYN ACK must not be re-tx */
-		rbe->syn_ack_tsecr = tp->rx_opt.rcv_tsecr;
-	}
-
-	tcp_revsw_generic_syn_post_config(sk);
-}
-
-/*
  * @tcp_revsw_rbe_snd_wnd_test
  *
  * This function determines if we should
@@ -1432,7 +1411,7 @@ static struct tcp_congestion_ops tcp_revsw_rbe __read_mostly = {
 	.cwnd_event	= tcp_revsw_rbe_event,
 	.get_info	= NULL,
 	.pkts_acked	= tcp_revsw_rbe_pkts_acked,
-	.syn_post_config = tcp_revsw_rbe_syn_post_config,
+	.syn_post_config = tcp_revsw_generic_syn_post_config,
 	.set_nwin_size = NULL,
 	.handle_nagle_test = tcp_revsw_generic_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
