@@ -167,6 +167,12 @@ struct revsw_rbe {
 #define TCP_REVSW_RBE_BMAX(rbe)      (rbe->Tbuff + (rbe->Tbuff >> 1))
 #define TCP_REVSW_RBE_BMIN(rbe)      (rbe->Tbuff - (rbe->Tbuff >> 1))
 
+#define TCP_REVSW_RBE_RETX_IN_LAST_RTT(tp)	\
+	((tcp_time_stamp - tp->retrans_stamp) < (tp->srtt >> 3))
+
+#define TCP_REVSW_RBE_TIME_SINCE_LAST_SACK(tp)	\
+				((tp->srtt >> 3) + ((tp->srtt >> 3) >> 2))
+
 #define LOG_IT(loglevel, format, ...)  { \
 	if (tcp_revsw_sysctls.rbe_loglevel && tcp_revsw_sysctls.rbe_loglevel >= loglevel)  { \
 		if (loglevel == TCP_REVSW_RBE_LOG_ERR)		\
@@ -482,12 +488,22 @@ static u32 tcp_revsw_rbe_receive_rate(struct tcp_sock *tp,
 static inline void tcp_revsw_rbe_fill_buffer(struct tcp_sock *tp,
 					 struct revsw_rbe *rbe)
 {
-	u32 srtt_msecs;
 	u32 delta_sending_rate; /* per second */
+	u32 Bmax;
 
-	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
-	delta_sending_rate = 1000 * (TCP_REVSW_RBE_BMAX(rbe) - rbe->Tbuff) /
-			     srtt_msecs;
+	/*
+	 * Fill the buffer faster if there are no re-tranmissions in
+	 * last RTT.
+	 */
+	Bmax = TCP_REVSW_RBE_BMAX(rbe) +
+		TCP_REVSW_RBE_RETX_IN_LAST_RTT(tp) ? 0: (rbe->Tbuff >> 2);
+	/*
+	 * TODO (minor): Bmax adds rbe->Tbuff and we subtract it again.
+	 * Optimize this addition, subtraction calculation.
+	 */
+	delta_sending_rate = (1000 * (Bmax - rbe->Tbuff)) /
+			     jiffies_to_msecs(tp->srtt >> 3);
+
 
 	rbe->sending_rate = (u32) ewma_read(&rbe->receiving_rate);
 	rbe->sending_rate += delta_sending_rate;
@@ -813,7 +829,7 @@ static inline void tcp_revsw_rbe_set_init_monitor_sending_rate(
 			/* TODO: Decrease sending_rate ? */
 			TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_SACK);
 		} else {
-			rbe->sending_rate += (3 *
+			rbe->sending_rate += (rbe->ss_growth_factor *
 					(tp->snd_una - rbe->una));
 			LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
 				"INIT. Exp Growth. Sending Rate: %u\n",
@@ -950,12 +966,12 @@ static inline void tcp_revsw_rbe_handle_slow_ack(struct tcp_sock *tp,
 	if (tp->sacked_out != rbe->last_sacked_out) {
 		if (tp->sacked_out &&
 			((tcp_time_stamp - rbe->sack_time_stamp) >
-			((tp->srtt >> 3) + ((tp->srtt >> 3) >> 2)))) {
+			TCP_REVSW_RBE_TIME_SINCE_LAST_SACK(tp))) {
 			/*
 			 * Fresh SACK
 			 * TODO: After 1 SACK, we are not throttling
-			 * sending_rate for subsequent SACKs for 1.25 RTT
-			 * instead of 1 RTT. Too Aggressive?
+			 * sending_rate for subsequent SACKs for
+			 * TCP_REVSW_RBE_TIME_SINCE_LAST_SACK() RTT
 			 */
 			LOG_IT(TCP_REVSW_RBE_LOG_INFO, 
 				"\t\tFresh SACK. Current-State before changing = %u\n\n",
@@ -1296,18 +1312,27 @@ static void tcp_revsw_rbe_state(struct sock *sk, u8 new_state)
 	rbe = &__rbe;
 
 	if (new_state == TCP_CA_Loss) {
-		if ((tcp_time_stamp - tcp_sk(sk)->retrans_stamp) >
-			(tcp_sk(sk)->srtt >> 3)) {
+		if (rbe->rbe_state == TCP_REVSW_RBE_STATE_SACK) {
 			/*
-			 * There has not been any loss in last RTT,
-			 * ignore if we are already in SACK mode.
-			 * TODO: This is aggressive. Review it.
+			 * We are in SACK processing state which means
+			 * we are already draining buffer.
+			 * (1) Ignore this event, if We entered SACK state
+			 * in last TCP_REVSW_RBE_TIME_SINCE_LAST_SACK/2 ticks.
+			 * (2) If not 1, we are in SACK processing state but
+			 * it may not be enough. So, drain more.
 			 */
-			if (rbe->rbe_state == TCP_REVSW_RBE_STATE_SACK) {
-				LOG_IT(TCP_REVSW_RBE_LOG_INFO,
-					"\n !!!! TCP_CA_Loss IGNORED\n\n");
+			if ((tcp_time_stamp - rbe->sack_time_stamp) <
+			    (TCP_REVSW_RBE_TIME_SINCE_LAST_SACK(tp) >> 1))
 				return;
-			}
+		} else if (!TCP_REVSW_RBE_RETX_IN_LAST_RTT(tp)) {
+			/*
+			 * There has not been any retransmits in last RTT,
+			 * no SACK but RTO. This is unlikely.
+			 * TODO: Review this.
+			 */
+			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+			       "\n RTO without SACK (unlikely event)");
+			return;
 		}
 
 		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "!!!! TCP_CA_Loss State\n");
