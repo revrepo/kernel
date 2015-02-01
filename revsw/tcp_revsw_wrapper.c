@@ -123,6 +123,8 @@ static u32 tcp_revsw_min_cwnd(const struct sock *sk)
 
 	if (cca_ops->min_cwnd)
 		return cca_ops->min_cwnd(sk);
+	else
+		return tcp_sk(sk)->snd_cwnd;
 
 	return 0;
 }
