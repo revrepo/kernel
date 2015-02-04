@@ -104,11 +104,6 @@ struct icsk_priv {
 	u32 rbe_sack_time_stamp;
 
 	u32 rbe_drain_start_ts;
-	u32 rbe_syn_ack_tsecr;
-	u32 rbe_una;
-	u16 rbe_estimated_tick_gra;
-	u8 rbe_mode;
-	u8 rbe_state;
 };
 
 struct sess_priv {
@@ -130,6 +125,11 @@ struct sess_priv {
 
 	struct ewma rbe_receiving_rate;
 	struct sock *tsk;
+	u32 rbe_syn_ack_tsecr;
+	u32 rbe_una;
+	u16 rbe_estimated_tick_gra;
+	u8 rbe_mode;
+	u8 rbe_state;
 	u8 ss_growth_factor;
 };
 
@@ -150,11 +150,6 @@ struct revsw_rbe {
 #define last_sacked_out		i->rbe_last_sacked_out
 #define sack_time_stamp		i->rbe_sack_time_stamp
 #define drain_start_ts		i->rbe_drain_start_ts
-#define syn_ack_tsecr		i->rbe_syn_ack_tsecr
-#define una			i->rbe_una
-#define estimated_tick_gra	i->rbe_estimated_tick_gra
-#define rbe_mode		i->rbe_mode
-#define rbe_state		i->rbe_state
 
 #define timer			s->rbe_timer
 #define Tbuff			s->rbe_T
@@ -165,6 +160,11 @@ struct revsw_rbe {
 #define receiving_rate		s->rbe_receiving_rate
 #define syn_tsval		s->rbe_syn_tsval
 #define tsk			s->tsk
+#define syn_ack_tsecr		s->rbe_syn_ack_tsecr
+#define una			s->rbe_una
+#define estimated_tick_gra	s->rbe_estimated_tick_gra
+#define rbe_mode		s->rbe_mode
+#define rbe_state		s->rbe_state
 #define ss_growth_factor	s->ss_growth_factor
 };
 
@@ -1288,6 +1288,10 @@ static bool tcp_revsw_rbe_validate_use(struct sock *sk, u8 initiated)
 	 * - client has enabled TCP timestamps
 	 * - client has enabled SACKs
 	 */
+
+	BUILD_BUG_ON(sizeof(struct sess_priv) > (TCP_CCA_PRIV_UINTS * sizeof(u32)));
+	BUILD_BUG_ON(sizeof(struct icsk_priv) > TCP_REVSW_CCA_PADDING);
+
 	if (initiated == TCP_SESSION_CLIENT_INITIATED)
 		results |= (1 << 3);
 
