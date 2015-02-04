@@ -312,7 +312,7 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 				 * TK!!!
 				 * TODO: Find a way around using this function
 				 */
-				//tcp_data_snd_check(sk);
+				tcp_data_snd_check(sk);
 				sk_mem_reclaim(sk);
 			} else {
 				/*
