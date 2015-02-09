@@ -115,8 +115,6 @@ static struct tcp_session_container tcpsi_container;
 
 static struct tcp_session_info_hash *tcpsi_hash;
 
-static struct tcp_session_info_ops *tcpsi_ops[TCP_REVSW_CCA_MAX];
-
 static struct tcp_session_hash_entry *tcpsi_entry_blocks[1000];
 static int tcpsi_entry_block_cnt;
 
@@ -526,30 +524,6 @@ exit:
 /**************** END Userspace TCP Session Info APIs ****************/
 
 /*********************************************************************
- * TCP Session Info OPs APIs
- *********************************************************************/
-
-/*
- * tcp_session_register_ops
- */
-void tcp_session_register_ops(u32 cca_type, struct tcp_session_info_ops *ops)
-{
-	if (cca_type < TCP_REVSW_CCA_MAX)
-		tcpsi_ops[cca_type] = ops;
-}
-
-/*
- * tcp_session_deregister_ops
- */
-void tcp_session_deregister_ops(u32 cca_type)
-{
-	if (cca_type < TCP_REVSW_CCA_MAX)
-		tcpsi_ops[cca_type] = NULL;
-}
-
-/********************* TCP Session Info OPs APIs *********************/
-
-/*********************************************************************
  * TCP Session APIs
  *********************************************************************/
 
@@ -587,9 +561,6 @@ void tcp_session_add(struct sock *sk, u8 cca_type)
 		session->rwin = TCP_REVSW_RWIN_LRG;
 
 	session->iseq = tp->snd_nxt;
-
-	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_add)
-		tcpsi_ops[cca_type]->session_add(sk, &session->info);
 }
 
 /*
@@ -620,11 +591,6 @@ void tcp_session_delete(const struct sock *sk)
 			     hdata.session);
 
 	tcp_session_delete_connection_entry(entry);
-
-	if (tcpsi_ops[cca_type] && tcpsi_ops[cca_type]->session_delete) {
-		tcpsi_ops[cca_type]->session_delete(&session->info,
-						(void *) &session->cca_priv[0]);
-	}
 
 	/*
 	 * Update final stats

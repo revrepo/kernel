@@ -153,5 +153,4 @@ static struct tcp_congestion_ops tcp_revsw_dummy __read_mostly = {
 struct tcp_revsw_cca_entry tcp_revsw_dummy_cca  __read_mostly = {
 	.revsw_cca = TCP_REVSW_CCA_UNKNOWN,
 	.cca_ops = &tcp_revsw_dummy,
-	.session_ops = NULL,
 };

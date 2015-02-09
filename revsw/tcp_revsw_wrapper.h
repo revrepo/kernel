@@ -40,7 +40,6 @@ struct tcp_revsw_cca_entry {
 	void (*cca_init)(void);
 	bool (*cca_validate_use)(struct sock *sk, u8 initiated);
 	struct tcp_congestion_ops *cca_ops;
-	struct tcp_session_info_ops *session_ops;
 };
 
 /*

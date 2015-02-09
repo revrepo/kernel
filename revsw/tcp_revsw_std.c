@@ -716,5 +716,4 @@ struct tcp_revsw_cca_entry tcp_revsw_std_cca  __read_mostly = {
 	.revsw_cca = TCP_REVSW_CCA_STANDARD,
 	.cca_init = tcp_revsw_std_cca_init,
 	.cca_ops = &tcp_revsw_std,
-	.session_ops = NULL,
 };

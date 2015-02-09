@@ -63,17 +63,9 @@ struct tcp_session_info {
 	u8 cca_type;
 };
 
-struct tcp_session_info_ops {
-	void (*session_add)(struct sock *sk, struct tcp_session_info *info);
-	void (*session_delete)(struct tcp_session_info *info, void *cca_priv);
-};
-
 extern void tcp_session_update_initiator(const struct sock *sk, u8 initiated);
 extern u16 tcp_session_get_act_cnt(const struct sock *sk);
 extern int tcp_session_get_info(struct sock *sk, unsigned char *data, int *len);
-extern void tcp_session_register_ops(u32 cca_type,
-				     struct tcp_session_info_ops *ops);
-extern void tcp_session_deregister_ops(u32 cca_type);
 extern void tcp_session_add(struct sock *sk, u8 cca_type);
 extern void tcp_session_delete(const struct sock *sk);
 extern struct tcp_session_info *tcp_session_get_info_ptr(struct sock *sk);

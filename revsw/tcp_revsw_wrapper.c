@@ -422,10 +422,6 @@ static int __init tcp_revsw_register(void)
 		if (tcp_revsw_cca_info[i] != NULL) {
 			if (tcp_revsw_cca_info[i]->cca_init)
 				tcp_revsw_cca_info[i]->cca_init();
-
-			if (tcp_revsw_cca_info[i]->session_ops)
-				tcp_session_register_ops(tcp_revsw_cca_info[i]->revsw_cca,
-										 tcp_revsw_cca_info[i]->session_ops);
 		}
 	}
 
@@ -437,14 +433,7 @@ static int __init tcp_revsw_register(void)
  */
 static void __exit tcp_revsw_unregister(void)
 {
-	int i = 0;
-
 	tcp_unregister_congestion_control(&tcp_revsw);
-
-	for (i = 0; i < TCP_REVSW_CCA_MAX; i++) {
-		if (tcp_revsw_cca_info[i] != NULL)
-			tcp_session_deregister_ops(i);
-	}
 
 	tcp_revsw_session_db_remove();
 
