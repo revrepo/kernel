@@ -49,6 +49,8 @@ struct tcp_session_entry {
 struct tcp_session_client_entry {
 	u32 total_retrans;
 	u32 total_pkts;
+	u32 total_retrans_cn;
+	u32 total_cn;
 	u32 bw_high;
 	u32 bw_low;
 	u32 bw_last;
@@ -263,6 +265,10 @@ tcp_session_delete_connection_entry(struct tcp_session_hash_entry *entry)
 static void tcp_session_update_info(u32 addr, struct tcp_session_entry *session,
 				    struct tcp_session_client_entry *client)
 {
+	u32 rtxw = tcp_revsw_sysctls.retrans_weight[session->rwin];
+	u32 rtx = 0;
+	u32 cnn = 0;
+
 	if (session->info.bandwidth > client->bw_high)
 		client->bw_high = session->info.bandwidth;
 	else if (session->info.bandwidth < client->bw_low)
@@ -277,18 +283,20 @@ static void tcp_session_update_info(u32 addr, struct tcp_session_entry *session,
 
 	client->latency_last = session->info.latency;
 
-//	if (session->total_retrans == 0)
-//		return;
+	client->total_cn += 1;
 
-	client->total_retrans += session->total_retrans;
-	client->total_pkts += session->total_pkts;
-	client->backoff_level = (client->total_retrans * 10) /
-				 client->total_pkts;
+	if (session->total_retrans != 0) {
+		client->total_retrans_cn += 1;
+		client->total_retrans += session->total_retrans;
+		client->total_pkts += session->total_pkts;
+	}
 
-	if (client->backoff_level)
-		pr_err("%s: IP %pI4 backoff %d (%u %u - %u %u)\n", __func__, &addr,
-			   client->backoff_level, session->total_retrans, session->total_pkts,
-			   client->total_retrans, client->total_pkts);
+	if (client->total_pkts != 0)
+		rtx = (client->total_retrans * 100) / client->total_pkts;
+
+	cnn = (client->total_retrans_cn * 100) / client->total_cn;
+
+	client->backoff_level = cnn * rtx * rtxw / 100000;
 }
 
 /*
@@ -318,7 +326,7 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 	hlist_for_each_entry_safe(temp, tnode, &thash->client_list.hlist,
 				  node) {
 		if (temp->addr == entry->addr) {
-			client = &temp->hdata.client[entry->hdata.session.rwin];
+			client = &temp->hdata.client[rwin];
 			break;
 		}
 	}
@@ -330,11 +338,11 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 		 * allowed on the system or the backoff level for this record
 		 * is level than 2, do not create a new client record.
 		 */
-		backoff_level = (entry->hdata.session.total_retrans * 10) /
-		entry->hdata.session.total_pkts;
+		backoff_level = (entry->hdata.session.total_retrans * 100) /
+				entry->hdata.session.total_pkts;
 
 		if ((tcp_revsw_sysctls.cl_entries >= tcp_revsw_sysctls.max_cl_entries) ||
-		    (backoff_level < TCP_REVSW_BKO_LVL2)) {
+		    (backoff_level < tcp_revsw_sysctls.safetynet_threshold[rwin])) {
 
 			spin_unlock_bh(&thash->client_list.lock);
 

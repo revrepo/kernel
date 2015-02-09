@@ -55,9 +55,14 @@ static int revsw_init_cwnd_max = REVSW_INIT_CWND_MAX;
 static int revsw_rwin_scale_min = REVSW_RWIN_SCALE_MIN;
 static int revsw_rwin_scale_max = REVSW_RWIN_SCALE_MAX;
 
-//static int revsw_cl_entries_min = REVSW_CL_ENTRIES_MIN;
-static int revsw_cl_entries_min = 0;
+static int revsw_cl_entries_min = REVSW_CL_ENTRIES_MIN;
 static int revsw_cl_entries_max = REVSW_CL_ENTRIES_MAX;
+
+static int revsw_safetynet_threshold_min = REVSW_SAFETYNET_THRESHOLD_MIN;
+static int revsw_safetynet_threshold_max = REVSW_SAFETYNET_THRESHOLD_MAX;
+
+static int revsw_retrans_weight_min = REVSW_SAFETYNET_THRESHOLD_MIN;
+static int revsw_retrans_weight_max = REVSW_SAFETYNET_THRESHOLD_MAX;
 
 struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.sm_rcv_wnd = REVSW_RWND_MPLR_DEFAULT,
@@ -75,6 +80,12 @@ struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.fc_entries = 0,
 	.max_cl_entries = REVSW_CL_ENTRIES_DEFAULT,
 	.supported_cca = (1 << TCP_REVSW_CCA_STANDARD),
+	.safetynet_threshold = {REVSW_SAFETYNET_THRESHOLD_DEFAULT,
+				REVSW_SAFETYNET_THRESHOLD_DEFAULT,
+				REVSW_SAFETYNET_THRESHOLD_DEFAULT },
+	.retrans_weight = {REVSW_RETRANS_WEIGHT_DEFAULT,
+			   REVSW_RETRANS_WEIGHT_DEFAULT,
+			   REVSW_RETRANS_WEIGHT_DEFAULT},
 };
 EXPORT_SYMBOL_GPL(tcp_revsw_sysctls);
 
@@ -199,6 +210,24 @@ struct ctl_table revsw_ctl_table[] = {
 		.mode = 0644,
 		.data = &tcp_revsw_sysctls.supported_cca,
 		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "local16",
+		.maxlen = sizeof(tcp_revsw_sysctls.safetynet_threshold),
+		.mode = 0644,
+		.data = &tcp_revsw_sysctls.safetynet_threshold,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_safetynet_threshold_min,
+		.extra2 = &revsw_safetynet_threshold_max,
+	},
+	{
+		.procname = "local17",
+		.maxlen = sizeof(tcp_revsw_sysctls.retrans_weight),
+		.mode = 0644,
+		.data = &tcp_revsw_sysctls.retrans_weight,
+		.proc_handler = &proc_dointvec_minmax,
+		.extra1 = &revsw_retrans_weight_min,
+		.extra2 = &revsw_retrans_weight_max,
 	},
 
 	{}

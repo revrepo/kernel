@@ -1,5 +1,5 @@
 /*
- *   tcp_revsw.h
+ *   tcp_revsw_wrapper.h
  *
  *   RevSw TCP Congestion Control Algorithm Wrapper
  *
@@ -69,9 +69,17 @@ extern struct tcp_revsw_cca_entry tcp_revsw_rbe_cca;
 #define REVSW_RWIN_SCALE_MIN		0
 #define REVSW_RWIN_SCALE_MAX		400
 
-#define REVSW_CL_ENTRIES_MIN	1
-#define REVSW_CL_ENTRIES_MAX	10000
-#define REVSW_CL_ENTRIES_DEFAULT 3000
+#define REVSW_CL_ENTRIES_MIN		1
+#define REVSW_CL_ENTRIES_MAX		10000
+#define REVSW_CL_ENTRIES_DEFAULT	3000
+
+#define REVSW_SAFETYNET_THRESHOLD_MIN		0
+#define REVSW_SAFETYNET_THRESHOLD_MAX		100
+#define REVSW_SAFETYNET_THRESHOLD_DEFAULT	20
+
+#define REVSW_RETRANS_WEIGHT_MIN	0
+#define REVSW_RETRANS_WEIGHT_MAX	100
+#define REVSW_RETRANS_WEIGHT_DEFAULT	100
 
 struct tcp_revsw_sysctl_data {
 	int sm_rcv_wnd;
@@ -89,6 +97,8 @@ struct tcp_revsw_sysctl_data {
 	int fc_entries;
 	int max_cl_entries;
 	int supported_cca;
+	int safetynet_threshold[3];
+	int retrans_weight[3];
 };
 
 extern struct ctl_table revsw_ctl_table[];
