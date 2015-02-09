@@ -197,14 +197,6 @@ static inline void tcp_revsw_rbe_set_state(struct revsw_rbe *ca, u8 state)
 }
 
 /*
- * @tcp_revsw_rbe_set_mode
- */
-static inline void tcp_revsw_rbe_set_mode(struct revsw_rbe *ca, u8 mode)
-{
-	ca->rbe_mode = mode;
-}
-
-/*
  * @tcp_revsw_rbe_cient_jiffies_to_msecs
  */
 static inline void
@@ -558,7 +550,7 @@ static inline void tcp_revsw_rbe_enter_monitor_mode(struct tcp_sock *tp,
 {
 	if (tp->sacked_out || tp->lost_out) {
 		if (ca->rbe_mode != TCP_REVSW_RBE_MODE_PRE_MONITOR) {
-			tcp_revsw_rbe_set_mode(ca, TCP_REVSW_RBE_MODE_PRE_MONITOR);
+			ca->rbe_mode = TCP_REVSW_RBE_MODE_PRE_MONITOR;
 			ca->sending_rate =
 				max_t(u32, ca->sending_rate >> 1,
 				(TCP_REVSW_RBE_PACKETS_REQ_CALC_RATE + 10) *
@@ -608,9 +600,9 @@ static inline void tcp_revsw_rbe_enter_monitor_mode(struct tcp_sock *tp,
 	}
 
 
-	ca->ack_r2	= tp->snd_una;
-	ca->rbe_state	= TCP_REVSW_RBE_STATE_INVALID;
-	tcp_revsw_rbe_set_mode(ca, TCP_REVSW_RBE_MODE_MONITOR);
+	ca->ack_r2 = tp->snd_una;
+	ca->rbe_state = TCP_REVSW_RBE_STATE_INVALID;
+	ca->rbe_mode = TCP_REVSW_RBE_MODE_MONITOR;
 	ewma_init(&ca->receiving_rate, 1024, 2);
 }
 
@@ -665,7 +657,7 @@ static void tcp_revsw_rbe_enter_bm_mode(struct tcp_sock *tp,
 	tcp_rbe_estimate_tbuff(ca);
 
 	ca->sending_rate = (u32) ewma_read(&ca->receiving_rate);
-	tcp_revsw_rbe_set_mode(ca, TCP_REVSW_RBE_MODE_BM);
+	ca->rbe_mode = TCP_REVSW_RBE_MODE_BM;
 }
 
 /*
@@ -973,7 +965,7 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 		ca.una = tp->snd_una;
 		ca.ack_r2 = tp->snd_una;
 		ca.sending_rate = quota = ca.init_cwnd * 1448;
-		tcp_revsw_rbe_set_mode(&ca, TCP_REVSW_RBE_MODE_INIT);
+		ca.rbe_mode = TCP_REVSW_RBE_MODE_INIT;
 
 		/*
 		 * If session DB is not yet allocated, timer_init wont happen.
