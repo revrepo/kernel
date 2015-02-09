@@ -340,13 +340,6 @@ static int tcp_revsw_rbe_init_timer(struct sock *sk, struct revsw_rbe *ca)
 	if (ca->tsk == sk)
 		return 0;
 
-	/* TODO: Check if we need to initialize all these variables */
-	ca->Tbuff = 0;
-	ca->tbuff_acked_data = 0;
-	ca->tbuff_ticks = 0;
-	ca->rdmin_tsval = 0;
-	ca->rdmin_tsecr = 0;
-
 	/* TODO: 1024 and 2, right values? */
 	ewma_init(&ca->receiving_rate, 1024, 2);
 
@@ -1068,8 +1061,8 @@ static void tcp_revsw_rbe_release(struct sock *sk)
 
 	tcp_revsw_rbe_get_ca(sk, &ca);
 
-	if (ca.s)
-		ca.tsk = NULL;
+	del_timer(&ca.timer);
+
 	tcp_session_delete(sk);
 }
 
@@ -1257,14 +1250,6 @@ tcp_revsw_rbe_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 	}
 }
 
-static void tcp_rbe_session_delete_cb(struct tcp_session_info *info,
-				      void *cca_priv)
-{
-	struct sess_priv *s = (struct sess_priv *) cca_priv;
-
-	del_timer(&s->rbe_timer);
-}
-
 static bool tcp_revsw_rbe_validate_use(struct sock *sk, u8 initiated)
 {
 	const struct inet_sock *inet = inet_sk(sk);
@@ -1333,14 +1318,9 @@ static struct tcp_congestion_ops tcp_revsw_rbe __read_mostly = {
 	.name		= "rbe"
 };
 
-static struct tcp_session_info_ops tcp_rbe_session_ops __read_mostly = {
-	.session_add	= NULL,
-	.session_delete = tcp_rbe_session_delete_cb
-};
-
 struct tcp_revsw_cca_entry tcp_revsw_rbe_cca __read_mostly = {
 	.revsw_cca = TCP_REVSW_CCA_RBE,
 	.cca_validate_use = tcp_revsw_rbe_validate_use,
 	.cca_ops = &tcp_revsw_rbe,
-	.session_ops = &tcp_rbe_session_ops,
+	.session_ops = NULL;
 };
