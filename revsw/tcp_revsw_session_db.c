@@ -353,7 +353,7 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 			memcpy(&session, &entry->hdata.session, sizeof(session));
 			memset(&entry->hdata.session, 0, sizeof(session));
 
-			client = &entry->hdata.client[entry->hdata.session.rwin];
+			client = &entry->hdata.client[rwin];
 
 			tcp_session_update_info(&session, client);
 
