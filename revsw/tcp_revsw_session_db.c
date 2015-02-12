@@ -344,6 +344,8 @@ static void tcp_session_update_client(struct tcp_session_hash_entry *entry)
 
 			spin_unlock_bh(&thash->client_list.lock);
 
+			memset(&(entry->hdata), 0, sizeof(entry->hdata));
+
 			spin_lock_bh(&tcpsi_container.lock);
 			hlist_add_head(&entry->node, &tcpsi_container.hlist);
 			tcpsi_container.entries++;
@@ -629,6 +631,7 @@ void tcp_session_delete(struct sock *sk)
 	if (session->initiated == TCP_SESSION_CLIENT_INITIATED)
 		tcp_session_update_client(entry);
 	else {
+		memset(&(entry->hdata), 0, sizeof(entry->hdata));
 		spin_lock_bh(&tcpsi_container.lock);
 		hlist_add_head(&entry->node, &tcpsi_container.hlist);
 		tcpsi_container.entries++;
