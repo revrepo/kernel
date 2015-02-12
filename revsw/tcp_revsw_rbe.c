@@ -70,6 +70,20 @@
 #define TCP_REVSW_RBE_SS_LVL3		TCP_REVSW_RBE_SS_DEFAULT + 3
 #define TCP_REVSW_RBE_SS_LVL4		TCP_REVSW_RBE_SS_DEFAULT + 4
 
+/*
+ * RBE Validation Conditions
+ */
+#define TCP_REVSW_RBE_CLIENT_INITIATED	(1 << 3)
+#define TCP_REVSW_RBE_NON_LOCAL_HOST	(1 << 2)
+#define TCP_REVSW_RBE_TIMESTAMP		(1 << 1)
+#define TCP_REVSW_RBE_SACK		(1 << 0)
+#define TCP_REVSW_RBE_VALID		(TCP_REVSW_RBE_CLIENT_INITIATED | \
+					 TCP_REVSW_RBE_NON_LOCAL_HOST | \
+					 TCP_REVSW_RBE_TIMESTAMP | \
+					 TCP_REVSW_RBE_SACK)
+#define TCP_REVSW_RBE_VALID_LOG		(TCP_REVSW_RBE_CLIENT_INITIATED | \
+					 TCP_REVSW_RBE_NON_LOCAL_HOST)
+
 const char *tcp_revsw_rbe_mode_string[TCP_REVSW_RBE_MODE_UNUSED_MAX] = {
 	"TCP_REVSW_RBE_MODE_INVALID", "TCP_REVSW_RBE_MODE_INIT", "TCP_RBE_MODE_BM",
 	"TCP_REVSW_RBE_MODE_PRE_MONITOR", "TCP_REVSW_RBE_MODE_MONITOR"
@@ -1238,6 +1252,7 @@ static void tcp_revsw_rbe_release(struct sock *sk)
 
 	if (rbe->s)
 		rbe->tsk = NULL;
+
 	tcp_session_delete(sk);
 
 	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s Exiting\n", __func__);
@@ -1447,24 +1462,50 @@ static bool tcp_revsw_rbe_validate_use(struct sock *sk, u8 initiated)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	bool use_valid = false;
+	u8 results = 0;
+
+/*
+ * RBE will be selected as long as the following conditions
+ * are met:
+ * - RBE is listed in the supported_cca sysctl
+ * - the connection is client initiated
+ * - client is not the LOCAL HOST
+ * - client has enabled TCP timestamps
+ * - client has enabled SACKs
+ */
+	if (initiated == TCP_SESSION_CLIENT_INITIATED)
+		results |= TCP_REVSW_RBE_CLIENT_INITIATED;
+
+	if (inet->inet_daddr != TCP_REVSW_LOCALHOST)
+		results |= TCP_REVSW_RBE_NON_LOCAL_HOST;
+
+	if (tp->rx_opt.tstamp_ok == 1)
+		results |= TCP_REVSW_RBE_TIMESTAMP;
+
+	if (tp->rx_opt.sack_ok & TCP_SACK_SEEN)
+		results |= TCP_REVSW_RBE_SACK;
+
+	if (tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE) &&
+	    (results == TCP_REVSW_RBE_VALID))
+		use_valid = true;
 
 	/*
-	 * RBE will be selected as long as the following conditions
-	 * are met:
-	 * - RBE is listed in the supported_cca sysctl
-	 * - the connection is client initiated
-	 * - client is not the LOCAL HOST
-	 * - client has enabled TCP timestamps
-	 * - client has enabled SACKs
-	 */
-	if ((tcp_revsw_sysctls.supported_cca & (1 << TCP_REVSW_CCA_RBE)) &&
-	    (initiated == TCP_SESSION_CLIENT_INITIATED) &&
-	    (inet->inet_daddr != TCP_REVSW_LOCALHOST) &&
-	    (tp->rx_opt.tstamp_ok == 1) &&
-	    (tp->rx_opt.sack_ok & TCP_SACK_SEEN))
-		return true;
+	* RBE is supported but it was not selected as the CCA for this 
+	* connection.  Log this fact.  This is a temporary log for initial
+	* testing of the new RBE code. Only create a log for client initiated
+	* connections that are not from the local host.
+	*/
+	if ((results & TCP_REVSW_RBE_VALID_LOG) == TCP_REVSW_RBE_VALID_LOG) {
+		if (use_valid && tcp_revsw_sysctls.rbe_loglevel > 1)
+			pr_err("%s: %p IP %pI4:%u using RBE (%d)\n", __func__, sk,
+				&inet->inet_daddr, ntohs(inet->inet_dport), results);
+		else if (!use_valid && tcp_revsw_sysctls.rbe_loglevel)
+			pr_err("%s: %p IP %pI4:%u did not use RBE (%d)\n", __func__, sk,
+				&inet->inet_daddr, ntohs(inet->inet_dport), results);
+	}
 
-	return false;
+	return use_valid;
 }
 
 static struct tcp_congestion_ops tcp_revsw_rbe __read_mostly = {
