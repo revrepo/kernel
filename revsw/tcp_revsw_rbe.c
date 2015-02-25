@@ -196,35 +196,36 @@ struct revsw_rbe {
 	}							\
 }
 
-#define TCP_REVSW_RBE_SET_STATE(rbe, state)  { \
-	if (rbe->rbe_state != state)	\
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "	%s to %s. Sending-rate = %u\n", \
-			tcp_revsw_rbe_state_string[rbe->rbe_state],	\
-			tcp_revsw_rbe_state_string[state],	\
-			rbe->sending_rate);	\
-	rbe->rbe_state = state;	\
+#define TCP_REVSW_RBE_SET_STATE(rbe, state)  { 						\
+	if (rbe->rbe_state != state)							\
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "        %s to %s. Sending-rate = %u\n",	\
+		       tcp_revsw_rbe_state_string[rbe->rbe_state],			\
+		       tcp_revsw_rbe_state_string[state],				\
+		       rbe->sending_rate);						\
+	rbe->rbe_state = state;								\
 }
 
-#define TCP_REVSW_RBE_SET_MODE(rbe, mode)  { \
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "	%s to %s\n", \
-			tcp_revsw_rbe_mode_string[rbe->rbe_mode],	\
-			tcp_revsw_rbe_mode_string[mode]);	\
-	rbe->rbe_mode = mode;	\
+#define TCP_REVSW_RBE_SET_MODE(rbe, mode)  { 			\
+	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "        %s to %s\n",	\
+	       tcp_revsw_rbe_mode_string[rbe->rbe_mode],	\
+	       tcp_revsw_rbe_mode_string[mode]);		\
+	rbe->rbe_mode = mode;					\
 }
 
-#define TCP_REVSW_RBE_PRIVATE_DATE(__rbe)	\
-{	\
-	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk); \
-	__rbe.i = (struct icsk_priv *)ca->padding;	\
-	__rbe.s = (struct sess_priv *)tcp_session_get_cca_priv(sk); \
+#define TCP_REVSW_RBE_PRIVATE_DATE(__rbe)				\
+{									\
+	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk);		\
+	__rbe.i = (struct icsk_priv *)ca->padding;			\
+	__rbe.s = (struct sess_priv *)tcp_session_get_cca_priv(sk);	\
 }
 
 /* TODO: What do we do when rbe->estimated_tick_gra  is 0 ? */
-#define TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, ticks, in_msecs)	do { \
-	if (rbe->estimated_tick_gra > 0)	\
-		in_msecs = (ticks * rbe->estimated_tick_gra);	\
-	else	\
-		in_msecs = jiffies_to_msecs(ticks);	\
+#define TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, ticks, in_msecs)	\
+do {									\
+	if (rbe->estimated_tick_gra > 0)				\
+		in_msecs = (ticks * rbe->estimated_tick_gra);		\
+	else								\
+		in_msecs = jiffies_to_msecs(ticks);			\
 } while (0)
 
 /*
@@ -271,12 +272,21 @@ static inline void tcp_rbe_estimate_tbuff(struct revsw_rbe *rbe)
 static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
 						struct revsw_rbe *rbe)
 {
-	int granularity, changed = 0;
+	int granularity;
+	int changed = 0;
+	u32 tsdiff = 0;
+
+	tsdiff = tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval;
+	if (tsdiff == 0) {
+		pr_err("%s: TS diff is ZERO rx_opt.rcv_tsval %u rbe_syn_tsval %u\n",
+		       __func__, tp->rx_opt.rcv_tsval, tp->rbe_syn_tsval);
+		return 0;
+	}
 
 	/* granularity = msecs past / num of ticks */
 	granularity =
 		jiffies_to_msecs(tcp_time_stamp - rbe->syn_ack_tsecr) /
-		 (tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval);
+		 tsdiff;
 
 	if (granularity >= 0 && granularity < 2) {
 		granularity = 1;
@@ -545,6 +555,11 @@ static inline void tcp_revsw_rbe_drain_buffer(struct tcp_sock *tp,
 		return;
 
 	srtt_msecs = jiffies_to_msecs(tp->srtt >> 3);
+	if (srtt_msecs == 0) {
+		pr_err("%s: ERROR - srtt_msecs is ZERO (%u)\n", __func__, tp->srtt);
+		return;
+	}
+
 	delta_sending_rate = 1000 * (rbe->Tbuff - TCP_REVSW_RBE_BMIN(rbe)) /
 			     srtt_msecs;
 
@@ -624,19 +639,26 @@ static void tcp_revsw_rbe_process_mode_bm(struct tcp_sock *tp,
 	if (rbe->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN) {
 		tcp_revsw_rbe_drain_buffer(tp, rbe);
 	} else if (rbe->rbe_state != TCP_REVSW_RBE_STATE_SACK) {
-		network_buffer_capacity = rbe->Tbuff * 1000 /
-			 (u32) ewma_read(&rbe->receiving_rate);
+		u32 rr_ewma = (u32) ewma_read(&rbe->receiving_rate);
 
-		if (jiffies_to_msecs(tbuff) < network_buffer_capacity)
-			tcp_revsw_rbe_fill_buffer(tp, rbe);
-		else
-			tcp_revsw_rbe_drain_buffer(tp, rbe);
+		if (rr_ewma) {
+			network_buffer_capacity = rbe->Tbuff * 1000 / rr_ewma;
 
-		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
-		"(BM) tbuff = %d, network_buffer_capacity = %d, rtt-min %u.\n",
-			jiffies_to_msecs(tbuff),
-			network_buffer_capacity,
-			rbe->rtt_min);
+			if (jiffies_to_msecs(tbuff) < network_buffer_capacity)
+				tcp_revsw_rbe_fill_buffer(tp, rbe);
+			else
+				tcp_revsw_rbe_drain_buffer(tp, rbe);
+
+			LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+			       "(BM) tbuff = %d, network_buffer_capacity = %d, rtt-min %u.\n",
+			       jiffies_to_msecs(tbuff),
+			       network_buffer_capacity,
+			       rbe->rtt_min);
+		} else {
+			pr_err("%s: Receive Rate EWMA is ZERO: internal %lu factor %lu weight %lu\n",
+			       __func__, rbe->receiving_rate.internal, rbe->receiving_rate.factor,
+			       rbe->receiving_rate.weight);
+		}
 	}
 
 }
@@ -1116,6 +1138,7 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 	/* Quota: Bytes that can be sent out on wire. */
 	u32 quota, in_flight;
 	int cwnd_quota;
+	//int cwnd;
 	struct revsw_rbe *rbe, __rbe;
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
@@ -1179,12 +1202,9 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 	in_flight = tcp_packets_in_flight(tp);
 	tp->snd_cwnd = in_flight + cwnd_quota + 2;
 
-
 	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
-		"cwnd_quota %d, flight %u ; snd_wnd  %u ; snd_cwnd %u\n\n",
-		cwnd_quota, in_flight,
-		tp->snd_wnd,
-		tp->snd_cwnd);
+	       "cwnd_quota %d, flight %u ; snd_wnd  %u ; snd_cwnd %u\n",
+	       cwnd_quota, in_flight, tp->snd_wnd, tp->snd_cwnd);
 
 	return cwnd_quota;
 }
@@ -1277,8 +1297,8 @@ static u32 tcp_revsw_rbe_ssthresh(struct sock *sk)
 /*
  * @tcp_revsw_rbe_cong_avoid
  *
- * This is a mandatory callback function. Curbently not used by RBE.
- * TODO: Check where this function si called from and if we can use
+ * This is a mandatory callback function. Currently not used by RBE.
+ * TODO: Check where this function is called from and if we can use
  * this for RBE.
  * TODO: Also check if returning a different value makes
  * any difference to RBE
@@ -1296,20 +1316,20 @@ static void tcp_revsw_rbe_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 static void tcp_revsw_rbe_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 {
 	struct revsw_rbe *rbe, __rbe;
+	u32 mrtt = (u32)rtt / (u32)USEC_PER_MSEC;
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
 
-	if (rtt > 0) {
-		if (rbe->rtt_min == 0) {
-			rbe->rtt_min = (u32)rtt / (u32)USEC_PER_MSEC;
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO,
-				"Setting rtt-min: %u\n", rbe->rtt_min);
-		} else {
-			rbe->rtt_min = min_t(u32,
-						(u32)rtt / (u32)USEC_PER_MSEC,
-						rbe->rtt_min);
-		}
+	if (mrtt > 0) {
+		if (rbe->rtt_min != 0)
+			rbe->rtt_min = min(mrtt, rbe->rtt_min);
+		else
+			rbe->rtt_min = mrtt;
+
+
+		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+			   "Setting rtt-min: %u\n", rbe->rtt_min);
 	}
 }
 
