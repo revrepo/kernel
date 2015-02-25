@@ -282,9 +282,9 @@ static void tcp_revsw_syn_post_config(struct sock *sk)
  * @tcp_revsw_generic_handle_nagle_test
  */
 bool tcp_revsw_generic_handle_nagle_test(struct sock *sk,
-										 struct sk_buff *skb,
-										 unsigned int mss_now,
-										 int nonagle)
+					 struct sk_buff *skb,
+					 unsigned int mss_now,
+					 int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int mss = mss_now;
@@ -302,7 +302,7 @@ bool tcp_revsw_generic_handle_nagle_test(struct sock *sk,
 		mss = tcp_revsw_sysctls.packet_size;
 
 	if (!((skb->len < mss) && ((nonagle & TCP_NAGLE_CORK) ||
-							   (!nonagle && tp->packets_out && minscheck))))
+	    (!nonagle && tp->packets_out && minscheck))))
 		return true;
 
 	return false;
@@ -353,6 +353,25 @@ static int tcp_revsw_get_cwnd_quota(struct sock *sk, const struct sk_buff *skb)
 	return 0;
 }
 
+static bool
+tcp_revsw_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
+		       unsigned int cur_mss)
+{
+	u32 end_seq = TCP_SKB_CB(skb)->end_seq;
+	struct sock *sk = (struct sock *) tp;
+	struct tcp_congestion_ops *cca_ops;
+
+	cca_ops = tcp_revsw_get_cca_ops(sk);
+
+	if (cca_ops->snd_wnd_test)
+		return cca_ops->snd_wnd_test(tp, skb, cur_mss);
+
+	if (skb->len > cur_mss)
+		end_seq = TCP_SKB_CB(skb)->seq + cur_mss;
+
+	return !after(end_seq, tcp_wnd_end(tp));
+}
+
 static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.flags		= TCP_CONG_RTT_STAMP,
 	.init		= tcp_revsw_init,
@@ -369,6 +388,7 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 	.handle_nagle_test = tcp_revsw_handle_nagle_test,
 	.get_session_info = tcp_session_get_info,
 	.get_cwnd_quota = tcp_revsw_get_cwnd_quota,
+	.snd_wnd_test	= tcp_revsw_snd_wnd_test,
 
 	.owner		= THIS_MODULE,
 	.name		= "revsw"
