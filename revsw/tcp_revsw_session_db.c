@@ -122,6 +122,8 @@ static struct tcp_session_info_ops *tcpsi_ops[TCP_REVSW_CCA_MAX];
 static struct tcp_session_hash_entry *tcpsi_entry_blocks[1000];
 static int tcpsi_entry_block_cnt;
 
+static bool tcp_revsw_container_work_scheduled = false;
+
 /*
  * tcp_revsw_session_cleanup_hlist
  */
@@ -151,15 +153,17 @@ static void tcp_revsw_session_allocate_block(struct work_struct *work)
 	struct tcp_session_hash_entry *entry;
 	int i;
 
-	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_KERNEL);
-	BUG_ON(!entry);
+	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_ATOMIC);
+	if (!entry) {
+		pr_err("%s: failed to allocate TCP session block\n", __func__);
+		goto exit;
+	}
 
 	spin_lock_bh(&tcpsi_container.lock);
 
 	tcpsi_entry_blocks[tcpsi_entry_block_cnt++] = entry;
 
-	pr_err("Revsw: Allocated new session block (%d)\n",
-		   tcpsi_entry_block_cnt);
+	pr_err("Revsw: Allocated new session block (%d)\n", tcpsi_entry_block_cnt);
 	
 	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++)
 		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
@@ -169,6 +173,9 @@ static void tcp_revsw_session_allocate_block(struct work_struct *work)
 	tcp_revsw_sysctls.fc_entries += TCP_SESSION_BLOCK_SIZE;
 
 	spin_unlock_bh(&tcpsi_container.lock);
+
+exit:
+	tcp_revsw_container_work_scheduled = false;
 }
 
 /*
@@ -192,8 +199,11 @@ static struct tcp_session_hash_entry *tcp_revsw_session_get_free_entry(void)
 	 * number of free entries in the container.  Need
 	 * to keep at least 1/3 of the original block size.
 	 */
-	if (tcpsi_container.entries < (TCP_SESSION_BLOCK_SIZE / 3))
+	if ((tcpsi_container.entries < (TCP_SESSION_BLOCK_SIZE / 2)) &&
+		(tcp_revsw_container_work_scheduled == false)) {
+		tcp_revsw_container_work_scheduled = true;
 		schedule_delayed_work(&tcpsi_container.work, 0);
+	}
 
 	return entry;
 }
@@ -695,7 +705,7 @@ int __init tcp_revsw_session_db_init(void)
 	INIT_DELAYED_WORK(&tcpsi_container.work,
 			  tcp_revsw_session_allocate_block);
 
-	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_KERNEL);
+	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_ATOMIC);
 	BUG_ON(!entry);
 
 	tcpsi_entry_blocks[tcpsi_entry_block_cnt++] = entry;
@@ -710,7 +720,7 @@ int __init tcp_revsw_session_db_init(void)
 	 * Initial all lists, locks, etc for the tcpsi hash
 	 */
 	tcpsi_hash = kzalloc(TCP_SESSION_HASH_SIZE * sizeof(*tcpsi_hash),
-			     GFP_KERNEL);
+			     GFP_ATOMIC);
 
 	if (!tcpsi_hash)
 		goto container_fail;
