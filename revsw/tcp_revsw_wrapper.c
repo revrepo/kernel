@@ -26,6 +26,14 @@
 
 #define TCP_REVSW_LOCALHOST 0x100007f
 
+#define SECONDS_PER_HOUR (60 * 60)
+#define SECONDS_PER_DAY (SECONDS_PER_HOUR * 24)
+#define TCP_REVSW_EXP_TIME (TCP_REVSW_TRIAL_PERIOD * SECONDS_PER_DAY)
+
+void tcp_revsw_init(struct sock *sk);
+
+static bool tcp_revsw_unregistered = true;
+
 static struct ctl_table_header *revsw_ctl_table_hdr;
 
 struct tcp_revsw_cca_entry *tcp_revsw_cca_info[TCP_REVSW_CCA_MAX] =
@@ -51,37 +59,6 @@ tcp_revsw_get_cca_ops(const struct sock *sk)
 		return tcp_revsw_cca_info[cca_type]->cca_ops;
 	else
 		return tcp_revsw_cca_info[TCP_REVSW_CCA_UNKNOWN]->cca_ops;
-}
-
-/*
- * @tcp_revsw_init
- */
-static void tcp_revsw_init(struct sock *sk)
-{
-	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk);
-	struct tcp_congestion_ops *cca_ops;
-	struct tcp_sock *tp = tcp_sk(sk);
-	int cca = TCP_REVSW_CCA_STANDARD;
-	u8 initiated = TCP_SESSION_SERVER_INITIATED;
-
-	if (sk->sk_state == TCP_SYN_RECV)
-		initiated = TCP_SESSION_CLIENT_INITIATED;
-
-	/*
-	 * Currently there are two CCAs, STD and RBE. Check whether or
-	 * not this connection has the proper settings to use RBE.  If
-	 * no then use the STD CCA. 
-	 */
-	if (tcp_revsw_cca_info[TCP_REVSW_CCA_RBE]->cca_validate_use(sk, initiated))
-		cca = TCP_REVSW_CCA_RBE;
-
-	ca->tcp_revsw_cca = cca;
-	cca_ops = tcp_revsw_cca_info[cca]->cca_ops;
-
-	if (cca_ops->init)
-		cca_ops->init(sk);
-
-	tcp_session_update_initiator(tp, initiated);
 }
 
 /*
@@ -395,6 +372,51 @@ static struct tcp_congestion_ops tcp_revsw __read_mostly = {
 };
 
 /*
+ * @tcp_revsw_init
+ */
+void tcp_revsw_init(struct sock *sk)
+{
+	struct tcp_revsw_cca_data *ca = inet_csk_ca(sk);
+	struct tcp_congestion_ops *cca_ops;
+	struct tcp_sock *tp = tcp_sk(sk);
+	int cca = TCP_REVSW_CCA_STANDARD;
+	u8 initiated = TCP_SESSION_SERVER_INITIATED;
+	struct timeval current_time;
+
+	do_gettimeofday(&current_time);
+
+	if ((sysctl_tcp_revsw_install.tv_sec == 0) ||
+		(sysctl_tcp_revsw_install.tv_sec > current_time.tv_sec) ||
+		(TCP_REVSW_EXP_TIME < (current_time.tv_sec - sysctl_tcp_revsw_install.tv_sec))) {
+
+		pr_err("RevAPM: Trial period has expired.  Switching connection CCA to cubic\n");
+
+		tcp_set_default_congestion_control("cubic");
+		tcp_unregister_congestion_control(&tcp_revsw);
+		tcp_revsw_unregistered = true;
+	}
+
+	if (sk->sk_state == TCP_SYN_RECV)
+		initiated = TCP_SESSION_CLIENT_INITIATED;
+
+	/*
+	 * Currently there are two CCAs, STD and RBE. Check whether or
+	 * not this connection has the proper settings to use RBE.  If
+	 * no then use the STD CCA.
+	 */
+	if (tcp_revsw_cca_info[TCP_REVSW_CCA_RBE]->cca_validate_use(sk, initiated))
+		cca = TCP_REVSW_CCA_RBE;
+
+	ca->tcp_revsw_cca = cca;
+	cca_ops = tcp_revsw_cca_info[cca]->cca_ops;
+
+	if (cca_ops->init)
+		cca_ops->init(sk);
+
+	tcp_session_update_initiator(tp, initiated);
+}
+
+/*
  * @tcp_revsw_register
  */
 static int __init tcp_revsw_register(void)
@@ -414,9 +436,32 @@ static int __init tcp_revsw_register(void)
 
 			if (tcp_revsw_cca_info[i]->session_ops)
 				tcp_session_register_ops(tcp_revsw_cca_info[i]->revsw_cca,
-										 tcp_revsw_cca_info[i]->session_ops);
+							 tcp_revsw_cca_info[i]->session_ops);
 		}
 	}
+
+	/*
+	 * Set the install date 
+	 */
+	if (sysctl_tcp_revsw_install.tv_sec == 0)
+		do_gettimeofday(&sysctl_tcp_revsw_install);
+	else {
+		struct timeval current_time;
+
+		do_gettimeofday(&current_time);
+		if (current_time.tv_sec < sysctl_tcp_revsw_install.tv_sec) {
+			pr_err("Invalid system time, not installing RevAPM module\n");
+			return -1;
+		}
+
+		if (TCP_REVSW_EXP_TIME < (current_time.tv_sec - sysctl_tcp_revsw_install.tv_sec)) {
+			pr_err("RevAPM Trial period has expired, not installing module\n");
+
+			return -1;
+		}
+	}
+
+	tcp_revsw_unregistered = false;
 
 	return tcp_register_congestion_control(&tcp_revsw);
 }
@@ -428,7 +473,10 @@ static void __exit tcp_revsw_unregister(void)
 {
 	int i = 0;
 
-	tcp_unregister_congestion_control(&tcp_revsw);
+	if (tcp_revsw_unregistered == false) {
+		tcp_unregister_congestion_control(&tcp_revsw);
+		tcp_revsw_unregistered = true;
+	}
 
 	for (i = 0; i < TCP_REVSW_CCA_MAX; i++) {
 		if (tcp_revsw_cca_info[i] != NULL)

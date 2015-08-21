@@ -193,6 +193,34 @@ static int proc_allowed_congestion_control(struct ctl_table *ctl,
 	return ret;
 }
 
+static int proc_revsw_install(struct ctl_table *ctl,
+			int write,
+			void __user *buffer, size_t *lenp,
+			loff_t *ppos)
+{
+	struct ctl_table tbl = { .maxlen = (sizeof(char) * 25) };
+	int ret;
+	struct tm tm;
+	unsigned long local_time;
+
+	tbl.data = kmalloc(tbl.maxlen, GFP_USER);
+	if (!tbl.data)
+		return -ENOMEM;
+
+	local_time = (u32)sysctl_tcp_revsw_install.tv_sec;
+	if (local_time > 0)
+		local_time -= (sys_tz.tz_minuteswest * 60);
+
+	time_to_tm(local_time, 0, &tm);
+
+	snprintf(tbl.data, tbl.maxlen, "%04ld-%02d-%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+			 tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+	ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+	kfree(tbl.data);
+	return ret;
+}
+
 static int ipv4_tcp_mem(struct ctl_table *ctl, int write,
 			   void __user *buffer, size_t *lenp,
 			   loff_t *ppos)
@@ -723,6 +751,12 @@ static struct ctl_table ipv4_table[] = {
 		.maxlen		= TCP_CA_BUF_MAX,
 		.mode		= 0644,
 		.proc_handler   = proc_allowed_congestion_control,
+	},
+	{
+		.procname	= "tcp_revsw_install_date",
+		.maxlen		= (sizeof(char) * 25),
+		.mode		= 0444,
+		.proc_handler	= proc_revsw_install
 	},
 	{
 		.procname	= "tcp_max_ssthresh",

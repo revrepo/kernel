@@ -17,6 +17,9 @@
 
 int sysctl_tcp_max_ssthresh = 0;
 
+struct timeval sysctl_tcp_revsw_install = {0};
+EXPORT_SYMBOL_GPL(sysctl_tcp_revsw_install);
+
 static DEFINE_SPINLOCK(tcp_cong_list_lock);
 static LIST_HEAD(tcp_cong_list);
 
@@ -136,6 +139,7 @@ int tcp_set_default_congestion_control(const char *name)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(tcp_set_default_congestion_control);
 
 /* Set default value from kernel configuration at bootup */
 static int __init tcp_congestion_default(void)

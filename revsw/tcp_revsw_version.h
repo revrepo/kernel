@@ -12,6 +12,8 @@
 
 #define TCP_REVSW_MAJOR		1
 #define TCP_REVSW_MINOR		1
-#define TCP_REVSW_SUBLEVEL	12
+#define TCP_REVSW_SUBLEVEL	13
+
+#define TCP_REVSW_TRIAL_PERIOD	60
 
 #endif /* __TCP_REVSW_VERSION_H__ */
