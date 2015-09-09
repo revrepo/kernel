@@ -24,8 +24,24 @@
 #define TCP_REVSW_RTT_MIN   (HZ/20)	/* 50ms */
 #define TCP_REVSW_INIT_RTT  (20*HZ)	/* maybe too conservative?! */
 #define BICTCP_BETA_SCALE    1024	/* Scale factor beta calculation
-									 * max_cwnd = snd_cwnd * beta
+                                                                        * max_cwnd = snd_cwnd * beta */
+
+#define TCP_REVSW_STD_LOG_NOLOG  TCP_REVSW_STD_LOG_DEFAULT
+#define TCP_REVSW_STD_LOG_ERR  (TCP_REVSW_STD_LOG_DEFAULT + 1)
+#define TCP_REVSW_STD_LOG_INFO  (TCP_REVSW_STD_LOG_DEFAULT + 2)
+#define TCP_REVSW_STD_LOG_SACK  (TCP_REVSW_STD_LOG_DEFAULT + 3)
+#define TCP_REVSW_STD_LOG_VERBOSE  (TCP_REVSW_STD_LOG_DEFAULT + 4)
 									 */
+
+#define LOG_IT(loglevel, format, ...)  { \
+        if (tcp_revsw_sysctls.std_loglevel && tcp_revsw_sysctls.std_loglevel >= loglevel)  { \
+                if (loglevel == TCP_REVSW_STD_LOG_ERR)          \
+                        pr_err(format, ## __VA_ARGS__);         \
+                else                                            \
+                        pr_info(format, ## __VA_ARGS__);        \
+        }                                                       \
+}
+
 
 #define BICTCP_HZ     10  /* BIC HZ 2^10 = 1024 */
 

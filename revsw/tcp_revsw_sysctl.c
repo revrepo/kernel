@@ -74,6 +74,7 @@ struct tcp_revsw_sysctl_data tcp_revsw_sysctls = {
 	.rwin_scale = 0,
 	.disable_nagle_mss = 0,
 	.rbe_loglevel = TCP_REVSW_RBE_LOG_DEFAULT,
+	.std_loglevel = TCP_REVSW_STD_LOG_DEFAULT,
 	.test_tcp_snd_wnd = 0,
 	.cl_entries = 0,
 	.cn_entries = 0,
@@ -165,6 +166,13 @@ struct ctl_table revsw_ctl_table[] = {
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.data = &tcp_revsw_sysctls.rbe_loglevel,
+		.proc_handler = &proc_dointvec,
+	},
+	{
+		.procname = "revsw_std_loglevel",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.data = &tcp_revsw_sysctls.std_loglevel,
 		.proc_handler = &proc_dointvec,
 	},
 	{

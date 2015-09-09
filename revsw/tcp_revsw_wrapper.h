@@ -56,6 +56,7 @@ extern struct tcp_revsw_cca_entry tcp_revsw_rbe_cca;
  */
 #define REVSW_LARGE_RWND_SIZE		65535
 #define TCP_REVSW_RBE_LOG_DEFAULT	0
+#define TCP_REVSW_STD_LOG_DEFAULT	0
 
 #define REVSW_PACKET_SIZE_MIN		300
 #define REVSW_PACKET_SIZE_MAX		2000
@@ -92,6 +93,7 @@ struct tcp_revsw_sysctl_data {
 	int rwin_scale;
 	int disable_nagle_mss;
 	int rbe_loglevel;
+	int std_loglevel;
 	int test_tcp_snd_wnd;
 	int cl_entries;
 	int cn_entries;
