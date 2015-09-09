@@ -26,23 +26,6 @@
 #define BICTCP_BETA_SCALE    1024	/* Scale factor beta calculation
                                                                         * max_cwnd = snd_cwnd * beta */
 
-#define TCP_REVSW_STD_LOG_NOLOG  TCP_REVSW_STD_LOG_DEFAULT
-#define TCP_REVSW_STD_LOG_ERR  (TCP_REVSW_STD_LOG_DEFAULT + 1)
-#define TCP_REVSW_STD_LOG_INFO  (TCP_REVSW_STD_LOG_DEFAULT + 2)
-#define TCP_REVSW_STD_LOG_SACK  (TCP_REVSW_STD_LOG_DEFAULT + 3)
-#define TCP_REVSW_STD_LOG_VERBOSE  (TCP_REVSW_STD_LOG_DEFAULT + 4)
-									 */
-
-#define LOG_IT(loglevel, format, ...)  { \
-        if (tcp_revsw_sysctls.std_loglevel && tcp_revsw_sysctls.std_loglevel >= loglevel)  { \
-                if (loglevel == TCP_REVSW_STD_LOG_ERR)          \
-                        pr_err(format, ## __VA_ARGS__);         \
-                else                                            \
-                        pr_info(format, ## __VA_ARGS__);        \
-        }                                                       \
-}
-
-
 #define BICTCP_HZ     10  /* BIC HZ 2^10 = 1024 */
 
 
@@ -524,6 +507,9 @@ static void tcp_revsw_std_update_rtt_min(struct revsw_std *ca)
 		ca->reset_rtt_min = 0;
 	} else
 		ca->rtt_min = min(ca->rtt, ca->rtt_min);
+
+	LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_INFO,
+			   "Setting rtt-min: %u\n", ca->rtt_min)
 }
 
 /*
@@ -668,8 +654,11 @@ static int tcp_revsw_std_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 	}
 
 	info = tcp_session_get_info_ptr(sk);
-	if (info)
+	if (info) {
+		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+                           "Setting quota-reached for socket: %p\n", sk)
 		info->quota_reached = 1;
+	}
 
 exit:
 	return quota;

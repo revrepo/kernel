@@ -16,6 +16,8 @@
 #ifndef __TCP_REVSW_H__
 #define __TCP_REVSW_H__
 
+#include "tcp_revsw_logutils.h"
+ 
 #define TCP_REVSW_LOCALHOST 0x100007f
 
 /*
@@ -55,8 +57,6 @@ extern struct tcp_revsw_cca_entry tcp_revsw_rbe_cca;
  * RevSw Sysctl defines and data structures
  */
 #define REVSW_LARGE_RWND_SIZE		65535
-#define TCP_REVSW_RBE_LOG_DEFAULT	0
-#define TCP_REVSW_STD_LOG_DEFAULT	0
 
 #define REVSW_PACKET_SIZE_MIN		300
 #define REVSW_PACKET_SIZE_MAX		2000
@@ -94,6 +94,7 @@ struct tcp_revsw_sysctl_data {
 	int disable_nagle_mss;
 	int rbe_loglevel;
 	int std_loglevel;
+	int sess_loglevel;
 	int test_tcp_snd_wnd;
 	int cl_entries;
 	int cn_entries;
