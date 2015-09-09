@@ -269,7 +269,8 @@ static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
 
 	tsdiff = tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval;
 	if (tsdiff == 0) {
-		pr_err("%s: TS diff is ZERO rx_opt.rcv_tsval %u rbe_syn_tsval %u\n",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
+			"%s: TS diff is ZERO rx_opt.rcv_tsval %u rbe_syn_tsval %u\n",
 		       __func__, tp->rx_opt.rcv_tsval, tp->rbe_syn_tsval);
 		return 0;
 	}
@@ -1211,6 +1212,9 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 	u32 bko_level;
 
 	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
+	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+           "Starting session for rbe socket: %p\n", sk)
+
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
@@ -1263,6 +1267,9 @@ static void tcp_revsw_rbe_release(struct sock *sk)
 
 	if (rbe->s)
 		rbe->tsk = NULL;
+
+	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+           "Freeing session for rbe socket: %p\n", sk)
 
 	tcp_session_delete(sk);
 

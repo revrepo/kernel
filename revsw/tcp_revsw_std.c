@@ -95,6 +95,9 @@ static void tcp_revsw_std_init(struct sock *sk)
 {
 	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 
+	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+           "Starting session for std socket: %p\n", sk)
+
 	ca->bk = 0;
 	ca->bw_ns_est = 0;
 	ca->bw_est = 0;
@@ -128,6 +131,8 @@ static void tcp_revsw_std_init(struct sock *sk)
  */
 static void tcp_revsw_std_release(struct sock *sk)
 {
+	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "Freeing session for std record: %p\n", sk)
+
 	tcp_session_delete(sk);
 }
 
@@ -366,10 +371,15 @@ static void tcp_revsw_std_increase_cwin(struct sock *sk, u32 ack, u32 in_flight)
 		return;
 
 	/* In "safe" area, increase. */
-	if (tp->snd_cwnd <= tp->snd_ssthresh)
+	if (tp->snd_cwnd <= tp->snd_ssthresh) {
+		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+                           "Slow-start for socket: %p\n", sk)
 		tcp_slow_start(tp);
+	}
 	/* In dangerous area, increase slowly. */
 	else {
+		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+                           "Cubic-growth for socket: %p\n", sk)		
 		tcp_revsw_std_cubic_growth(ca, tp->snd_cwnd);
 		tcp_revsw_std_cong_avoid_ai(tp, ca->cnt);
 	}
@@ -470,6 +480,9 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 	 * bandwidth sample
 	 */
 	if (ca->first_ack) {
+		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+                           "Track first sequence number for socket: %p, %d\n", sk, tcp_sk(sk)->snd_una);
+
 		ca->snd_una = tcp_sk(sk)->snd_una;
 		ca->first_ack = 0;
 	}
@@ -491,6 +504,8 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 
 		info = tcp_session_get_info_ptr(sk);
 		if (info) {
+			LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_INFO,
+                           "Session: Updating latency and bandwidth for socket: %p\n; %d -> %d, %d -> %d", sk, info->latency, ca->rtt, info->bandwidth, ca->bw_est)
 			info->latency = ca->rtt;
 			info->bandwidth = ca->bw_est;
 		}
@@ -625,8 +640,11 @@ static void tcp_revsw_std_set_nwin_size(struct sock *sk, u32 nwin)
 	info = tcp_session_get_info_ptr(sk);
 
 	if ((info && info->quota_reached) || (nwin == 0) ||
-	    (nwin > tp->snd_wnd))
+	    (nwin > tp->snd_wnd)) {
+		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+                           "Setting nwin size for socket: %p\n", sk)
 		tp->snd_wnd = nwin;
+	}
 }
 
 /*
