@@ -18,6 +18,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <net/tcp.h>
+#include <net/inet_sock.h>
 #include "tcp_revsw_wrapper.h"
 #include "tcp_revsw_session_db.h"
 
@@ -94,10 +95,13 @@ static struct revsw_std *tcp_revsw_std_get_ca(const struct sock *sk)
 static void tcp_revsw_std_init(struct sock *sk)
 {
 	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
-
-	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-           "Starting session for std socket: %p\n", sk)
-
+	const struct inet_sock *isk = inet_sk(sk);
+	
+	if (isk != NULL) {
+		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+        	   "Starting session for std socket: %pI4:%d -> %pI4:%d\n",
+			&isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+	}
 	ca->bk = 0;
 	ca->bw_ns_est = 0;
 	ca->bw_est = 0;
@@ -131,8 +135,10 @@ static void tcp_revsw_std_init(struct sock *sk)
  */
 static void tcp_revsw_std_release(struct sock *sk)
 {
-	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "Freeing session for std record: %p\n", sk)
-
+	const struct inet_sock *isk = inet_sk(sk);
+	if (isk != NULL) {
+		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "Freeing session for std socket: %pI4:%d -> %pI4:%d\n", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+	}
 	tcp_session_delete(sk);
 }
 
@@ -366,20 +372,23 @@ static void tcp_revsw_std_increase_cwin(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
+	const struct inet_sock *isk = inet_sk(sk);
 
 	if (!tcp_is_cwnd_limited(sk, in_flight))
 		return;
 
 	/* In "safe" area, increase. */
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {
-		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-                           "Slow-start for socket: %p\n", sk)
+		if (isk != NULL) {
+			LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "Slow-start for std socket: %pI4:%d -> %pI4:%d\n", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+		}
 		tcp_slow_start(tp);
 	}
 	/* In dangerous area, increase slowly. */
 	else {
-		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-                           "Cubic-growth for socket: %p\n", sk)		
+		if (isk != NULL) {
+			LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "Cubic growth for std socket: %pI4:%d -> %pI4:%d\n", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+		}
 		tcp_revsw_std_cubic_growth(ca, tp->snd_cwnd);
 		tcp_revsw_std_cong_avoid_ai(tp, ca->cnt);
 	}
@@ -472,6 +481,7 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 {
 	struct revsw_std *ca = tcp_revsw_std_get_ca(sk);
 	struct tcp_session_info *info;
+	const struct inet_sock *isk = inet_sk(sk);
 
 	s32 delta = tcp_time_stamp - ca->rtt_win_sx;
 
@@ -480,9 +490,10 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 	 * bandwidth sample
 	 */
 	if (ca->first_ack) {
-		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-                           "Track first sequence number for socket: %p, %d\n", sk, tcp_sk(sk)->snd_una);
-
+		if (isk != NULL) {
+			LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+        	                   "Track first sequence number for std socket: %pI4:%d -> %pI4:%d, %d\n", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport), tcp_sk(sk)->snd_una);
+		}
 		ca->snd_una = tcp_sk(sk)->snd_una;
 		ca->first_ack = 0;
 	}
@@ -504,8 +515,10 @@ static void tcp_revsw_std_update_window(struct sock *sk)
 
 		info = tcp_session_get_info_ptr(sk);
 		if (info) {
-			LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_INFO,
-                           "Session: Updating latency and bandwidth for socket: %p\n; %d -> %d, %d -> %d", sk, info->latency, ca->rtt, info->bandwidth, ca->bw_est)
+			if (isk != NULL) {
+				LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+        	                   "Session: Updating latency and bandwidth for std socket: %pI4:%d -> %pI4:%d; %d -> %d, %d -> %d", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport), info->latency, ca->rtt, info->bandwidth, ca->bw_est)
+			}
 			info->latency = ca->rtt;
 			info->bandwidth = ca->bw_est;
 		}
@@ -520,11 +533,12 @@ static void tcp_revsw_std_update_rtt_min(struct revsw_std *ca)
 	if (ca->reset_rtt_min) {
 		ca->rtt_min = ca->rtt;
 		ca->reset_rtt_min = 0;
-	} else
+	} else {
 		ca->rtt_min = min(ca->rtt, ca->rtt_min);
+		LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+			   "Setting rtt-min %u\n", ca->rtt_min)
+	}
 
-	LOG_IT(tcp_revsw_sysctls.std_loglevel, TCP_REVSW_UTL_LOG_INFO,
-			   "Setting rtt-min: %u\n", ca->rtt_min)
 }
 
 /*
@@ -636,13 +650,16 @@ static void tcp_revsw_std_set_nwin_size(struct sock *sk, u32 nwin)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_session_info *info;
+	const struct inet_sock *isk = inet_sk(sk);
 
 	info = tcp_session_get_info_ptr(sk);
 
 	if ((info && info->quota_reached) || (nwin == 0) ||
 	    (nwin > tp->snd_wnd)) {
-		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-                           "Setting nwin size for socket: %p\n", sk)
+		if (isk != NULL) {
+			LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+        	                   "Setting nwin size %d for std socket: %pI4:%d -> %pI4:%d\n", nwin, &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+		}
 		tp->snd_wnd = nwin;
 	}
 }
@@ -674,7 +691,7 @@ static int tcp_revsw_std_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 	info = tcp_session_get_info_ptr(sk);
 	if (info) {
 		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-                           "Setting quota-reached for socket: %p\n", sk)
+                           "Setting quota-reached for std socket: %p\n", sk)
 		info->quota_reached = 1;
 	}
 
