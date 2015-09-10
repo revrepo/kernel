@@ -1211,10 +1211,13 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 	struct revsw_rbe *rbe, __rbe;
 	u32 bko_level;
 
-	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
-	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-           "Starting session for rbe socket: %p\n", sk)
+	const struct inet_sock *isk = inet_sk(sk);
 
+	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
+	if (isk != NULL) {
+	  LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+		 "Starting session for rbe socket: %pI4:%d -> %pI4:%d\n",  &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport));
+	}
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
@@ -1248,8 +1251,10 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 		break;
 	}
 
-	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s Growth Factor: %u\n", 
-					__func__, rbe->ss_growth_factor);
+	if (isk != NULL) {
+	  LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s: rbe socket %pI4:%d -> %pI4:%d - Growth Factor: %u\n", 
+		 __func__,&isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport), rbe->ss_growth_factor);
+	}
 }
 
 /*
@@ -1261,16 +1266,17 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 static void tcp_revsw_rbe_release(struct sock *sk)
 {
 	struct revsw_rbe *rbe, __rbe;
+	const struct inet_sock *isk = inet_sk(sk);
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
 
 	if (rbe->s)
 		rbe->tsk = NULL;
-
-	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
-           "Freeing session for rbe socket: %p\n", sk)
-
+	if (isk != NULL) {
+	  LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+	       "Freeing session for rbe socket: %pI4:%d -> %pI4:%d\n", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+	}
 	tcp_session_delete(sk);
 
 	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s Exiting\n", __func__);
