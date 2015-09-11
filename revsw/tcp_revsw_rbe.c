@@ -187,18 +187,9 @@ struct revsw_rbe {
 #define TCP_REVSW_RBE_TIME_SINCE_LAST_SACK(tp)	\
 				((tp->srtt >> 3) + ((tp->srtt >> 3) >> 2))
 
-#define LOG_IT(loglevel, format, ...)  { \
-	if (tcp_revsw_sysctls.rbe_loglevel && tcp_revsw_sysctls.rbe_loglevel >= loglevel)  { \
-		if (loglevel == TCP_REVSW_RBE_LOG_ERR)		\
-			pr_err(format, ## __VA_ARGS__);		\
-		else						\
-			pr_info(format, ## __VA_ARGS__);	\
-	}							\
-}
-
 #define TCP_REVSW_RBE_SET_STATE(rbe, state)  { 						\
 	if (rbe->rbe_state != state)							\
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "        %s to %s. Sending-rate = %u\n",	\
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "        %s to %s. Sending-rate = %u\n",	\
 		       tcp_revsw_rbe_state_string[rbe->rbe_state],			\
 		       tcp_revsw_rbe_state_string[state],				\
 		       rbe->sending_rate);						\
@@ -206,7 +197,7 @@ struct revsw_rbe {
 }
 
 #define TCP_REVSW_RBE_SET_MODE(rbe, mode)  { 			\
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "        %s to %s\n",	\
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "        %s to %s\n",	\
 	       tcp_revsw_rbe_mode_string[rbe->rbe_mode],	\
 	       tcp_revsw_rbe_mode_string[mode]);		\
 	rbe->rbe_mode = mode;					\
@@ -241,7 +232,7 @@ static inline void tcp_rbe_estimate_tbuff(struct revsw_rbe *rbe)
 							time_in_milisecs);
 	if (time_in_milisecs == 0) {
 	       /* TODO: Handle this in some other way? */
-	       LOG_IT(TCP_REVSW_RBE_LOG_ERR, "%s: NOT GOOD\n", __func__);
+	       LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR, "%s: NOT GOOD\n", __func__);
 	       return;
 	}
 
@@ -254,7 +245,7 @@ static inline void tcp_rbe_estimate_tbuff(struct revsw_rbe *rbe)
 
 	rbe->Tbuff = (rbe->tbuff_acked_data * rbe->rtt_min) / time_in_milisecs;
 
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 		       "T %u, Bmax %u, Bmin %u, r_rate = %u\n",
 		       rbe->Tbuff,
 		       TCP_REVSW_RBE_BMAX(rbe),
@@ -278,7 +269,8 @@ static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
 
 	tsdiff = tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval;
 	if (tsdiff == 0) {
-		pr_err("%s: TS diff is ZERO rx_opt.rcv_tsval %u rbe_syn_tsval %u\n",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
+			"%s: TS diff is ZERO rx_opt.rcv_tsval %u rbe_syn_tsval %u\n",
 		       __func__, tp->rx_opt.rcv_tsval, tp->rbe_syn_tsval);
 		return 0;
 	}
@@ -295,7 +287,7 @@ static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
 	} else if (granularity >= 7 && granularity < 14) {
 		granularity = 10;
 	} else {
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			"Wrong previous Estimation of Client TCP Granularity."
 			" Curbent Estimation: %u. Previous Estimation: %u\n",
 				granularity, rbe->estimated_tick_gra);
@@ -303,13 +295,13 @@ static inline int tcp_revsw_rbe_estimate_granularity(struct tcp_sock *tp,
 	}
 
 	if (granularity != rbe->estimated_tick_gra) {
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 		  "--------------> (%u/%u) Changing granularity from %u to %u\n",
 		  jiffies_to_msecs(tcp_time_stamp - rbe->syn_ack_tsecr),
 		  (tp->rx_opt.rcv_tsval - tp->rbe_syn_tsval),
 		  rbe->estimated_tick_gra, granularity);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 			"%u %u %u %u\n",
 			tcp_time_stamp, rbe->syn_ack_tsecr,
 			tp->rx_opt.rcv_tsval, tp->rbe_syn_tsval);
@@ -330,18 +322,18 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 
 	__rbe.s = (struct sess_priv *) data;
 	if (__rbe.s == NULL) {
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR, "%s: ERRORR, data is NULL\n", __func__);
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR, "%s: ERRORR, data is NULL\n", __func__);
 		return;
 	}
 
 	sk = __rbe.tsk;
 	if (sk == NULL) {
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s: tsk is NULL\n", __func__);
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s: tsk is NULL\n", __func__);
 		return;
 	}
 
 	if (sk->sk_state != TCP_ESTABLISHED) {
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s: sk_state != TCP_ESTABLISHED\n",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s: sk_state != TCP_ESTABLISHED\n",
 			__func__);
 		return;
 	}
@@ -354,7 +346,7 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 	if (rbe->bytes_sent_this_leak < rbe->sending_rate) {
 		if (tcp_send_head(sk)) {
 
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 				"** %s: Quota is not fully utilized\n",
 				__func__);
 
@@ -377,7 +369,7 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 			sock_put(sk);
 		}
 	} else {
-		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 			"** %s: In Timer Callback\n",
 			__func__);
 
@@ -387,7 +379,7 @@ static void tcp_revsw_rbe_timer_handler(unsigned long data)
 		if (mod_timer(&rbe->timer, jiffies +
 			msecs_to_jiffies(TCP_REVSW_RBE_LEAK_QUOTA_TIMER))) {
 			/* TODO: Handle error */
-			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 				"%s: Error modifying timer\n", __func__);
 		}
 	}
@@ -425,7 +417,7 @@ static inline int tcp_revsw_rbe_init_timer(struct revsw_rbe *rbe, struct sock *s
 	if (mod_timer(&rbe->timer, jiffies +
 		msecs_to_jiffies(TCP_REVSW_RBE_LEAK_QUOTA_TIMER))) {
 		/* TODO: Handle error */
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			"%s: Error modifying timer\n", __func__);
 	}
 
@@ -460,7 +452,7 @@ static u32 tcp_revsw_rbe_receive_rate(struct tcp_sock *tp,
 	TCP_REVSW_RBE_CLINET_JIFFIES_TO_MSECS(rbe, ticks_delta, time_in_milisecs);
 	if (time_in_milisecs == 0) {
 		/* TODO: Handle this in some other way? */
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s: Network is fast!\n",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s: Network is fast!\n",
 							__func__);
 		return 0;
 	}
@@ -484,18 +476,18 @@ static u32 tcp_revsw_rbe_receive_rate(struct tcp_sock *tp,
 		if (tcp_revsw_rbe_estimate_granularity(tp, rbe))
 			tcp_rbe_estimate_tbuff(rbe);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "r1 r2, sr %u and %u / %u\n",
 			rbe->sending_rate, ack,
 			next_checkpoint);
 	}
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 	"ackd_bytes %u in %u ms. ack %u. r_rate %lu, r_ewma %lu.snd_r = %u\n",
 			acked_data, time_in_milisecs, ack, r_rate,
 			ewma_read(&rbe->receiving_rate),
 			rbe->sending_rate);
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 	"ack %u ; r_rate %lu, avg %lu. snd_r = %u\n",
 			ack, r_rate,
 			ewma_read(&rbe->receiving_rate),
@@ -534,7 +526,7 @@ static inline void tcp_revsw_rbe_fill_buffer(struct tcp_sock *tp,
 	TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FILL);
 	rbe->drain_start_ts = 0;
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 			"%s: delta_sending_rate %u and sending_rate = %u\n",
 			__func__,
 			delta_sending_rate, rbe->sending_rate);
@@ -574,7 +566,7 @@ static inline void tcp_revsw_rbe_drain_buffer(struct tcp_sock *tp,
 		rbe->sending_rate = 10 * tp->mss_cache;
 
 	if (rbe->rbe_state == TCP_REVSW_RBE_STATE_FORCE_DRAIN) {
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 			"%s: Reduced sending_rate to %u. delta = %u\n",
 			__func__,
 			rbe->sending_rate, delta_sending_rate);
@@ -587,7 +579,7 @@ static inline void tcp_revsw_rbe_drain_buffer(struct tcp_sock *tp,
 	if (rbe->drain_start_ts == 0)
 		rbe->drain_start_ts = tcp_time_stamp;
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 			"%s: delta_sending_rate %u and sending_rate = %u\n",
 			__func__,
 			delta_sending_rate, rbe->sending_rate);
@@ -631,7 +623,7 @@ static void tcp_revsw_rbe_process_mode_bm(struct tcp_sock *tp,
 
 	tbuff = RD - RDmin;
 	if (tbuff < 0) {
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			"(BM) tbuff < ZERO\n");
 		return;
 	}
@@ -649,7 +641,7 @@ static void tcp_revsw_rbe_process_mode_bm(struct tcp_sock *tp,
 			else
 				tcp_revsw_rbe_drain_buffer(tp, rbe);
 
-			LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 			       "(BM) tbuff = %d, network_buffer_capacity = %d, rtt-min %u.\n",
 			       jiffies_to_msecs(tbuff),
 			       network_buffer_capacity,
@@ -720,7 +712,7 @@ static inline void tcp_revsw_rbe_enter_monitor_mode(struct tcp_sock *tp,
 	rbe->rdmin_tsval = rbe->rdmin_tsecr = 0;
 
 	if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			"%s: Session DB not yet allocated\n", __func__);
 		return;
 	}
@@ -731,7 +723,7 @@ static inline void tcp_revsw_rbe_enter_monitor_mode(struct tcp_sock *tp,
 	TCP_REVSW_RBE_SET_MODE(rbe, TCP_REVSW_RBE_MODE_MONITOR);
 	ewma_init(&rbe->receiving_rate, 1024, 2);
 
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "Entering Monitor Mode (snd_una: %u)\n",
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "Entering Monitor Mode (snd_una: %u)\n",
 		tp->snd_una);
 }
 
@@ -759,7 +751,7 @@ static inline void tcp_revsw_rbe_post_first_valid_ack(struct tcp_sock *tp,
 						struct revsw_rbe *rbe,
 						u32 ack)
 {
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "\nFirst valid ACK %u. %u / %u\n",
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "\nFirst valid ACK %u. %u / %u\n",
 							ack,
 							tp->snd_cwnd,
 							tp->snd_wnd);
@@ -779,7 +771,7 @@ static inline void tcp_revsw_rbe_enter_bm_mode(struct tcp_sock *tp,
 						struct revsw_rbe *rbe,
 						u32 ack)
 {
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 		"Switching to BM mode after %u packets are acked.\n",
 		(ack - rbe->ack_r2) / tp->mss_cache);
 
@@ -833,7 +825,7 @@ static inline void tcp_revsw_rbe_init_monitor_common(struct tcp_sock *tp,
 			 */
 			enter_BM_mode = 1;
 		} else {
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO, "Slow Sender\n");
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "Slow Sender\n");
 			rbe->ts_r2  = tp->rx_opt.rcv_tsecr;
 			rbe->ts_r1  = tp->rx_opt.rcv_tsval;
 			rbe->ack_r1 = ack;
@@ -867,7 +859,7 @@ static inline void tcp_revsw_rbe_set_init_monitor_sending_rate(
 		} else {
 			rbe->sending_rate += (rbe->ss_growth_factor *
 					(tp->snd_una - rbe->una));
-			LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 				"INIT. Exp Growth. Sending Rate: %u\n",
 					rbe->sending_rate);
 		}
@@ -877,13 +869,13 @@ static inline void tcp_revsw_rbe_set_init_monitor_sending_rate(
 		else
 			tcp_revsw_rbe_fill_buffer(tp, rbe);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_SACK,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_SACK,
 			"Mode: %s. State %s. Sending Rate: %u\n",
 			tcp_revsw_rbe_mode_string[rbe->rbe_mode],
 			tcp_revsw_rbe_state_string[rbe->rbe_state],
 			rbe->sending_rate);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 			"Sending rate: %u, una: %u\n",
 			rbe->sending_rate,
 			tp->snd_una);
@@ -929,7 +921,7 @@ static void tcp_revsw_rbe_process_mode_init(struct tcp_sock *tp,
 	 * be allocated.
 	 */
 	if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			"%s: Session DB not yet allocated\n", __func__);
 		return;
 	}
@@ -984,7 +976,7 @@ static inline void tcp_revsw_rbe_common_ack(struct tcp_sock *tp,
 		break;
 
 	default:
-		LOG_IT(TCP_REVSW_RBE_LOG_ERR, "%s: ERROR!\n", __func__);
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR, "%s: ERROR!\n", __func__);
 		break;
 	}
 
@@ -1009,7 +1001,7 @@ static inline void tcp_revsw_rbe_handle_slow_ack(struct tcp_sock *tp,
 			 * sending_rate for subsequent SACKs for
 			 * TCP_REVSW_RBE_TIME_SINCE_LAST_SACK() RTT
 			 */
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO, 
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, 
 				"\t\tFresh SACK. Current-State before changing = %u\n\n",
 				rbe->rbe_state);
 			
@@ -1017,11 +1009,11 @@ static inline void tcp_revsw_rbe_handle_slow_ack(struct tcp_sock *tp,
 			rbe->sack_time_stamp = tcp_time_stamp;
 		}
 
-		LOG_IT(TCP_REVSW_RBE_LOG_SACK, "sacked_out %u. ack %u ..",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_SACK, "sacked_out %u. ack %u ..",
 				tp->sacked_out,
 				tp->snd_una);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_SACK,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_SACK,
 			"Blocks: %u %u, %u %u, %u %u, %u %u\n",
 			tp->recv_sack_cache[0].start_seq,
 			tp->recv_sack_cache[0].end_seq,
@@ -1046,11 +1038,11 @@ static inline void tcp_revsw_rbe_handle_fast_ack(struct tcp_sock *tp,
 {
 	if (tp->sacked_out != rbe->last_sacked_out) {
 		if (tp->sacked_out)
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 			       "sacked_out: fast ack? %u %u\n",
 			       tp->sacked_out, rbe->last_sacked_out);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "last sacked out updated! %u %u",
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "last sacked out updated! %u %u",
 		       tp->sacked_out, rbe->last_sacked_out);
 		rbe->last_sacked_out = tp->sacked_out;
 	}
@@ -1096,7 +1088,7 @@ static inline int tcp_revsw_rbe_remaining_leak_quota(struct tcp_sock *tp,
 		 * Btw, Does no harm.
 		 */
 		if (tcp_revsw_rbe_init_timer(rbe, (struct sock *) tp) == -1) {
-			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			       "%s: Session DB not yet allocated\n", __func__);
 			goto exit;
 		}
@@ -1110,7 +1102,7 @@ static inline int tcp_revsw_rbe_remaining_leak_quota(struct tcp_sock *tp,
 				msecs_to_jiffies(TCP_REVSW_RBE_LEAK_QUOTA_TIMER) -
 				unutilized_time)) {
 				/* TODO: Handle error? */
-				LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+				LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 					"%s: Error modifying timer", __func__);
 			}
 		}
@@ -1165,7 +1157,7 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 		 */
 		tcp_revsw_rbe_init_timer(rbe, sk);
 
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 			"Sending Very first packet (%u / %u) and una : %u\n",
 					rbe->init_cwnd, tp->snd_cwnd,
 					tp->snd_una);
@@ -1178,13 +1170,13 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 			 * Enter Monitor Mode. We are in
 			 * BUFFER_DRAIN state for more than 4 RTT
 			 */
-			LOG_IT(TCP_REVSW_RBE_LOG_INFO, "!!Enter Monitor Mode\n");
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "!!Enter Monitor Mode\n");
 			tcp_revsw_rbe_enter_monitor_mode(tp, rbe);
 		}
 		quota = tcp_revsw_rbe_remaining_leak_quota(tp, rbe);
 	}
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 		"Quota: %u, snd_rate %u, BY_sent %u last_SN %u, SN = %u\n",
 				quota, rbe->sending_rate,
 				rbe->bytes_sent_this_leak,
@@ -1202,7 +1194,7 @@ static int tcp_revsw_rbe_get_cwnd_quota(struct sock *sk, const struct sk_buff *s
 	in_flight = tcp_packets_in_flight(tp);
 	tp->snd_cwnd = in_flight + cwnd_quota + 2;
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE,
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
 	       "cwnd_quota %d, flight %u ; snd_wnd  %u ; snd_cwnd %u\n",
 	       cwnd_quota, in_flight, tp->snd_wnd, tp->snd_cwnd);
 
@@ -1219,7 +1211,13 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 	struct revsw_rbe *rbe, __rbe;
 	u32 bko_level;
 
+	const struct inet_sock *isk = inet_sk(sk);
+
 	tcp_session_add(sk, TCP_REVSW_CCA_RBE);
+	if (isk != NULL) {
+	  LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+		 "Starting session for rbe socket: %pI4:%d -> %pI4:%d\n",  &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport));
+	}
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
@@ -1253,8 +1251,10 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 		break;
 	}
 
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s Growth Factor: %u\n", 
-					__func__, rbe->ss_growth_factor);
+	if (isk != NULL) {
+	  LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s: rbe socket %pI4:%d -> %pI4:%d - Growth Factor: %u\n", 
+		 __func__,&isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport), rbe->ss_growth_factor);
+	}
 }
 
 /*
@@ -1266,16 +1266,20 @@ static void tcp_revsw_rbe_init(struct sock *sk)
 static void tcp_revsw_rbe_release(struct sock *sk)
 {
 	struct revsw_rbe *rbe, __rbe;
+	const struct inet_sock *isk = inet_sk(sk);
 
 	TCP_REVSW_RBE_PRIVATE_DATE(__rbe);
 	rbe = &__rbe;
 
 	if (rbe->s)
 		rbe->tsk = NULL;
-
+	if (isk != NULL) {
+	  LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_VERBOSE,
+	       "Freeing session for rbe socket: %pI4:%d -> %pI4:%d\n", &isk->inet_saddr, ntohs(isk->inet_sport), &isk->inet_daddr, ntohs(isk->inet_dport))
+	}
 	tcp_session_delete(sk);
 
-	LOG_IT(TCP_REVSW_RBE_LOG_INFO, "%s Exiting\n", __func__);
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "%s Exiting\n", __func__);
 }
 
 /*
@@ -1328,7 +1332,7 @@ static void tcp_revsw_rbe_pkts_acked(struct sock *sk, u32 cnt, s32 rtt)
 			rbe->rtt_min = mrtt;
 
 
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO,
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO,
 			   "Setting rtt-min: %u\n", rbe->rtt_min);
 	}
 }
@@ -1365,12 +1369,12 @@ static void tcp_revsw_rbe_state(struct sock *sk, u8 new_state)
 			 * no SACK but RTO. This is unlikely.
 			 * TODO: Review this.
 			 */
-			LOG_IT(TCP_REVSW_RBE_LOG_ERR,
+			LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_ERR,
 			       "\n RTO without SACK (unlikely event)");
 			return;
 		}
 
-		LOG_IT(TCP_REVSW_RBE_LOG_INFO, "!!!! TCP_CA_Loss State\n");
+		LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_INFO, "!!!! TCP_CA_Loss State\n");
 		TCP_REVSW_RBE_SET_STATE(rbe, TCP_REVSW_RBE_STATE_FORCE_DRAIN);
 		rbe->sack_time_stamp = tcp_time_stamp;
 		tcp_revsw_rbe_drain_buffer(tp, rbe);
@@ -1473,7 +1477,7 @@ static void tcp_rbe_session_delete_cb(struct tcp_session_info *info,
 {
 	struct sess_priv *s = (struct sess_priv *) cca_priv;
 
-	LOG_IT(TCP_REVSW_RBE_LOG_VERBOSE, "%s: Cleaning up\n", __func__);
+	LOG_IT(tcp_revsw_sysctls.rbe_loglevel, TCP_REVSW_UTL_LOG_VERBOSE, "%s: Cleaning up\n", __func__);
 
 	del_timer(&s->rbe_timer);
 }

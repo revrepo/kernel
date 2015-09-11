@@ -155,7 +155,9 @@ static void tcp_revsw_session_allocate_block(struct work_struct *work)
 
 	entry = kzalloc(sizeof(*entry) * TCP_SESSION_BLOCK_SIZE, GFP_ATOMIC);
 	if (!entry) {
-		pr_err("%s: failed to allocate TCP session block\n", __func__);
+
+		LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_ERR,
+			"%s: failed to allocate TCP session block\n", __func__);
 		goto exit;
 	}
 
@@ -163,7 +165,8 @@ static void tcp_revsw_session_allocate_block(struct work_struct *work)
 
 	tcpsi_entry_blocks[tcpsi_entry_block_cnt++] = entry;
 
-	pr_err("Revsw: Allocated new session block (%d)\n", tcpsi_entry_block_cnt);
+	LOG_IT(tcp_revsw_sysctls.sess_loglevel, TCP_REVSW_UTL_LOG_ERR,
+		"Revsw: Allocated new session block (%d)\n", tcpsi_entry_block_cnt);
 	
 	for (i = 0; i < TCP_SESSION_BLOCK_SIZE; i++)
 		hlist_add_head(&entry[i].node, &tcpsi_container.hlist);
