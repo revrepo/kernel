@@ -1,0 +1,11 @@
+Source: deb-revsw-module
+Section: misc
+Priority: optional
+Maintainer: Igor <igor at pbne.mygbiz.com>
+Build-Depends: debhelper (>= 7), dkms
+Standards-Version: 3.8.1
+
+Package: dev-revsw-module
+Architecture: all
+Depends: ${misc:Depends}
+Description: DEBIAN_PACKAGE driver in DKMS format (binary drivers only).
