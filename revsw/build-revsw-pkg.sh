@@ -21,6 +21,13 @@ else
 	exit
 fi
 
+if [ "$3" != "" ]; then
+	ci=$3
+else
+	echo "No build-specific version specified"
+	ci=""
+fi
+
 privKey=../license_keys/Revsw-$linuxVersion.priv
 x509Key=../license_keys/Revsw-$linuxVersion.x509
 
@@ -43,11 +50,40 @@ for file in $modFiles; do
 	$linuxDir/scripts/sign-file sha512 $privKey $x509Key $file
 done
 
-sed "s/kVersion/$linuxVersion/" revsw-mod-install-tmpl.sh > revsw-mod-install.sh
+# Build debian package
 
-chmod +x revsw-mod-install.sh
+pak=revsw-mod
+dep=revsw-kernel-deb
+kernver=$linuxVersion
+ver=$modVersion$ci
+templatedir=template-build-$kernver-$ver
+dat=$(date "+%a, %d %b %Y %H:%M:%S %z")
 
-tar cvf Revsw-modules-$modVersion-linux-$linuxVersion.tar $modFiles revsw-mod-install.sh 10-enable-revsw-tcp-module.conf
+echo "Building module $modVersion for linux $linuxVersion, final ver $ver"
 
-rm revsw-mod-install.sh
+# revsw_name is first ()-marked part of linux-image-(revsw-3.11.10-034)-(3.11.10-034-2).deb
+# revsw_ver is second
+rname=$kernver
+rnver=$kernver
 
+rm -vrf ../packages/$templatedir
+cp -vr module-deb-template ../packages/$templatedir
+
+sed "s/DEBIAN_VERSION/$ver/g" -i ../packages/$templatedir/debian/changelog || exit -1
+sed "s/DEBIAN_PACKAGE/$pak/g" -i ../packages/$templatedir/debian/changelog || exit -1
+sed "s/DEBIAN_PACKAGE/$pak/g" -i ../packages/$templatedir/debian/control || exit -1
+sed "s/REVSW_VER/$rnver/g"  -i ../packages/$templatedir/debian/control || exit -1
+sed "s/REVSW_NAME/$rname/g" -i ../packages/$templatedir/debian/control || exit -1
+sed "s/REVSW_NAME/$rname/g" -i ../packages/$templatedir/debian/install || exit -1
+sed "s/DATE_STAMP/$dat/g"   -i ../packages/$templatedir/debian/changelog || exit -1
+
+
+mkdir -p ../packages/$templatedir/lib/modules/$kernver/extra/
+modFiles=$(ls *.ko)
+
+for file in $modFiles; do
+	cp $file ../packages/$templatedir/lib/modules/$kernver/extra/
+done
+
+cd ../packages/$templatedir && dpkg-buildpackage -d -uc || exit -1
+rm -rf ../packages/$templatedir

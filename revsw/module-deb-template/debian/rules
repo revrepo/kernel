@@ -33,8 +33,8 @@ install: build
 	dh_testroot
 	dh_prep
 	dh_install
-#	dh_installdirs
-	$(MAKE) DESTDIR=$(CURDIR)/debian/deb-revsw-bin NAME=$(NAME) VERSION=$(VERSION) install
+	dh_installdirs
+	$(MAKE) DESTDIR=$(CURDIR)/debian/$(DEB_NAME) NAME=$(NAME) VERSION=$(VERSION) install
 
 binary-arch: build install
 
@@ -44,9 +44,6 @@ binary-indep: build install
 	dh_link
 	dh_strip
 	dh_compress
-	dh_installmodules
-	dh_installdocs
-	dh_installchangelogs
 	dh_fixperms
 	dh_installdeb
 	dh_shlibdeps

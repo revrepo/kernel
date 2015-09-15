@@ -4,17 +4,31 @@ NJOBS=`getconf _NPROCESSORS_ONLN`
 
 linuxVersionFile="./linux/Makefile"
 
+# Cleanup spare debs
+rm -f packages/*.deb
+
 # Get Linux version information
 version=$(awk '/^VERSION/ {print $3} ' $linuxVersionFile)
 patchlevel=$(awk '/^PATCHLEVEL/ {print $3} ' $linuxVersionFile)
 lsublevel=$(awk '/^SUBLEVEL/ {print $3} ' $linuxVersionFile)
 extraversion=$(awk '/^EXTRAVERSION/ {print $3} ' $linuxVersionFile)
 
-if [ "$extraversion" != "" ]; then
+ci=""
+if [ "x$BUILD_NUMBER" != "x" ]; then
+	ci="-$BUILD_NUMBER"
+	extraversion="$extraversion$ci"
 	linuxVersion=$version.$patchlevel.$lsublevel$extraversion
 else
-	linuxVersion=$version.$patchlevel.$lsublevel
+	ci=""
+	if [ "$extraversion" != "" ]; then
+		linuxVersion=$version.$patchlevel.$lsublevel.$extraversion
+	else
+		linuxVersion=$version.$patchlevel.$lsublevel
+	fi
+
 fi
+
+
 
 revVersionFile="./revsw/tcp_revsw_version.h"
 
@@ -23,7 +37,7 @@ major=$(awk '/TCP_REVSW_MAJOR/ {print $3} ' $revVersionFile)
 minor=$(awk '/TCP_REVSW_MINOR/ {print $3} ' $revVersionFile)
 rsublevel=$(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $revVersionFile)
 
-revVersion=$major.$minor.$rsublevel
+revVersion=$major.$minor.$rsublevel$ci
 
 # Generate the signing key files if necessary and copy them over to the
 # the linux build directory
@@ -35,6 +49,7 @@ cp x509.genkey ../linux/.
 
 echo "copied over signature files"
 
+echo "linux ver : $linuxVersion extra $extraversion ci $ci"
 cd ../linux
 
 if [ ! -f .config ]; then
@@ -45,18 +60,8 @@ if [ ! -f .config ]; then
         fi
 fi
 
-make -j$NJOBS INSTALL_MOD_STRIP=1 deb-pkg
+make -j$NJOBS INSTALL_MOD_STRIP=1 EXTRAVERSION=$extraversion deb-pkg
 
-# Build and package the RevSw Module
-cd ../revsw
-./build-revsw-pkg.sh $linuxVersion ../linux
 cd ..
-
-# Now package everything together in a tar file
-linuxImage=linux-image-$linuxVersion*.deb
-modImage=revsw/Revsw-modules-$revVersion-linux-$linuxVersion.tar
-
-tar cvf Revsw-linux-$linuxVersion-rev-$revVersion-amd64.tar $linuxImage $modImage revsw-install.sh
-
+mv linux-image-$linuxVersion*.deb packages/
 rm *.deb
-

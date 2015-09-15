@@ -1,6 +1,6 @@
-deb-revsw-module (0.1) stable; urgency=low
+DEBIAN_PACKAGE (DEBIAN_VERSION) stable; urgency=low
 
-  * Automatically packaged by DKMS.
-   + more details
- -- Igor <igor at pbne.mygbiz.com>  Mon, 14 Sep 2015 20:30:00 +0000
+  * Automatically packaged by CI.
+
+ -- revsw (Debian Release Staging Key) <revsw@revsw.com>  DATE_STAMP
 
