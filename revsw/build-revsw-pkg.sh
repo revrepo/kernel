@@ -53,7 +53,6 @@ done
 # Build debian package
 
 pak=revsw-mod
-dep=revsw-kernel-deb
 kernver=$linuxVersion
 ver=$modVersion$ci
 templatedir=template-build-$kernver-$ver

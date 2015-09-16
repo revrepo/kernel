@@ -18,6 +18,7 @@ if [ "x$BUILD_NUMBER" != "x" ]; then
 	ci="-$BUILD_NUMBER"
 	extraversion="$extraversion$ci"
 	linuxVersion=$version.$patchlevel.$lsublevel$extraversion
+	echo $BUILD_NUMBER > kernel-build-ver.txt
 else
 	ci=""
 	if [ "$extraversion" != "" ]; then

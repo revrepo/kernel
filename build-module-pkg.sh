@@ -1,4 +1,4 @@
-#!/bin/sh 
+#!/bin/sh
 
 linuxVersionFile="./linux/Makefile"
 
@@ -17,8 +17,14 @@ else
 	ci=""
 fi
 
-if [ "x$1" != "x" ]; then
-	extraversion="$extraversion$ci"
+# Get kernel version from other source
+kver=$1
+if [ "x$kver" == "x" ]; then
+	kver=$(cat kernel-build-ver.txt)
+fi
+
+if [ "x$kver" != "x" ]; then
+	extraversion="$extraversion-$kver"
 fi
 
 if [ "$extraversion" != "" ]; then
@@ -45,6 +51,6 @@ cd ..
 echo "Done keys"
 # Build id
 cd ./revsw
-echo "$linuxVersion ../linux $revVersion, ci=$ci"
-./build-revsw-pkg.sh $linuxVersion ../linux $revVersion $ci
+echo "$linuxVersion ../linux $revVersion, ci=$ci, kernel ver=$kver"
+./build-revsw-pkg.sh $linuxVersion ../linux $revVersion $kver
 cd ..
