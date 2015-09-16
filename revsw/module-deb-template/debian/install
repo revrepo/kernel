@@ -1,0 +1,2 @@
+lib/modules/REVSW_NAME/extra/tcp_revsw.ko	/lib/modules/REVSW_NAME/extra/
+etc/sysctl.d/10-enable-revsw-tcp-module.conf	/etc/sysctl.d/

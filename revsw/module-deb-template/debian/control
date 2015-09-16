@@ -1,0 +1,11 @@
+Source: DEBIAN_PACKAGE
+Section: misc
+Priority: optional
+Maintainer: revsw (Debian Release Staging Key) <revsw@revsw.com>
+Build-Depends: debhelper (>= 7), dkms
+Standards-Version: 3.8.1
+
+Package: DEBIAN_PACKAGE
+Architecture: amd64
+Pre-Depends: ${misc:Depends}, linux-image-REVSW_VER
+Description: DEBIAN_PACKAGE

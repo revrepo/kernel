@@ -1,0 +1,6 @@
+DEBIAN_PACKAGE (DEBIAN_VERSION) stable; urgency=low
+
+  * Automatically packaged by CI.
+
+ -- revsw (Debian Release Staging Key) <revsw@revsw.com>  DATE_STAMP
+
