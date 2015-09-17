@@ -21,11 +21,11 @@ else
 	exit
 fi
 
-if [ "$3" != "" ]; then
-	ci=$3
+if [ "x$BUILD_NUMBER" != "x" ]; then
+	ci=$BUILD_NUMBER
 else
 	echo "No build-specific version specified"
-	ci=""
+	ci="0"
 fi
 
 privKey=../license_keys/Revsw-$linuxVersion.priv
@@ -36,11 +36,12 @@ if [ ! -e $privKeyFile ] || [ ! -e $x509KeyFile ]; then
         exit
 fi
 
-major=$(awk '/TCP_REVSW_MAJOR/ {print $3} ' $modVersionFile)
-minor=$(awk '/TCP_REVSW_MINOR/ {print $3} ' $modVersionFile)
-sublevel=$(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $modVersionFile)
+major=2 #$(awk '/TCP_REVSW_MAJOR/ {print $3} ' $modVersionFile)
+minor=0 # $(awk '/TCP_REVSW_MINOR/ {print $3} ' $modVersionFile)
+sublevel=$ci # $(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $modVersionFile)
 
 modVersion=$major.$minor.$sublevel
+echo init modVer $modVersion
 
 make ARCH=x86_64 -C $linuxDir M=$PWD
 
@@ -54,7 +55,7 @@ done
 
 pak=revsw-mod
 kernver=$linuxVersion
-ver=$modVersion$ci
+ver=$modVersion
 templatedir=template-build-$kernver-$ver
 dat=$(date "+%a, %d %b %Y %H:%M:%S %z")
 
@@ -69,6 +70,7 @@ rm -vrf ../packages/$templatedir
 cp -vr module-deb-template ../packages/$templatedir
 
 sed "s/DEBIAN_VERSION/$ver/g" -i ../packages/$templatedir/debian/changelog || exit -1
+echo version was $ver
 sed "s/DEBIAN_PACKAGE/$pak/g" -i ../packages/$templatedir/debian/changelog || exit -1
 sed "s/DEBIAN_PACKAGE/$pak/g" -i ../packages/$templatedir/debian/control || exit -1
 sed "s/REVSW_VER/$rnver/g"  -i ../packages/$templatedir/debian/control || exit -1
