@@ -35,10 +35,10 @@ fi
 
 revVersionFile="./revsw/tcp_revsw_version.h"
 
-# Get the RevSw Module version information
-major=2 # $(awk '/TCP_REVSW_MAJOR/ {print $3} ' $revVersionFile)
-minor=0 # $(awk '/TCP_REVSW_MINOR/ {print $3} ' $revVersionFile)
-rsublevel=$ci #  $(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $revVersionFile)
+# Set the RevSw Module version information
+major=2
+minor=0
+rsublevel=$ci
 
 revVersion=$major.$minor.$rsublevel
 
