@@ -21,11 +21,11 @@ else
 	exit
 fi
 
-if [ "$3" != "" ]; then
-	ci=$3
+if [ "x$BUILD_NUMBER" != "x" ]; then
+	ci=$BUILD_NUMBER
 else
 	echo "No build-specific version specified"
-	ci=""
+	ci="0"
 fi
 
 privKey=../license_keys/Revsw-$linuxVersion.priv
@@ -36,9 +36,9 @@ if [ ! -e $privKeyFile ] || [ ! -e $x509KeyFile ]; then
         exit
 fi
 
-major=$(awk '/TCP_REVSW_MAJOR/ {print $3} ' $modVersionFile)
-minor=$(awk '/TCP_REVSW_MINOR/ {print $3} ' $modVersionFile)
-sublevel=$(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $modVersionFile)
+major=2
+minor=0
+sublevel=$ci
 
 modVersion=$major.$minor.$sublevel
 
@@ -54,7 +54,7 @@ done
 
 pak=revsw-mod
 kernver=$linuxVersion
-ver=$modVersion$ci
+ver=$modVersion
 templatedir=template-build-$kernver-$ver
 dat=$(date "+%a, %d %b %Y %H:%M:%S %z")
 

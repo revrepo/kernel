@@ -4,9 +4,6 @@ NJOBS=`getconf _NPROCESSORS_ONLN`
 
 linuxVersionFile="./linux/Makefile"
 
-# Cleanup spare debs
-rm -f packages/*.deb
-
 # Get Linux version information
 version=$(awk '/^VERSION/ {print $3} ' $linuxVersionFile)
 patchlevel=$(awk '/^PATCHLEVEL/ {print $3} ' $linuxVersionFile)
@@ -17,40 +14,22 @@ ci=""
 if [ "x$BUILD_NUMBER" != "x" ]; then
 	ci="-$BUILD_NUMBER"
 	extraversion="$extraversion$ci"
-	linuxVersion=$version.$patchlevel.$lsublevel$extraversion
+	linuxVersion=$version.$patchlevel.$lsublevel
 	echo $BUILD_NUMBER > kernel-build-ver.txt
 else
 	ci=""
-	if [ "$extraversion" != "" ]; then
-		linuxVersion=$version.$patchlevel.$lsublevel.$extraversion
-	else
 		linuxVersion=$version.$patchlevel.$lsublevel
-	fi
-
 fi
-
-
-
-revVersionFile="./revsw/tcp_revsw_version.h"
-
-# Get the RevSw Module version information
-major=$(awk '/TCP_REVSW_MAJOR/ {print $3} ' $revVersionFile)
-minor=$(awk '/TCP_REVSW_MINOR/ {print $3} ' $revVersionFile)
-rsublevel=$(awk '/TCP_REVSW_SUBLEVEL/ {print $3} ' $revVersionFile)
-
-revVersion=$major.$minor.$rsublevel$ci
 
 # Generate the signing key files if necessary and copy them over to the
 # the linux build directory
 cd license_keys
-./generate-keys.sh $linuxVersion
-cp Revsw-$linuxVersion.priv ../linux/signing_key.priv
-cp Revsw-$linuxVersion.x509 ../linux/signing_key.x509
+./generate-keys.sh $linuxVersion$extraversion
+cp Revsw-$linuxVersion$extraversion.priv ../linux/signing_key.priv
+cp Revsw-$linuxVersion$extraversion.x509 ../linux/signing_key.x509
 cp x509.genkey ../linux/.
 
-echo "copied over signature files"
-
-echo "linux ver : $linuxVersion extra $extraversion ci $ci"
+echo "keys generated for $linuxVersion$extraversion, copied; linux ver : $linuxVersion extra $extraversion ci $ci"
 cd ../linux
 
 if [ ! -f .config ]; then
@@ -60,6 +39,8 @@ if [ ! -f .config ]; then
                 make xconfig || make menuconfig
         fi
 fi
+
+rm -f packages/linux-image*.deb || true
 
 make -j$NJOBS INSTALL_MOD_STRIP=1 EXTRAVERSION=$extraversion deb-pkg
 
