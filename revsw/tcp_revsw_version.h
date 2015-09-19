@@ -10,8 +10,16 @@
 #ifndef __TCP_REVSW_VERSION_H__
 #define __TCP_REVSW_VERSION_H__
 
-#define TCP_REVSW_MAJOR		1
-#define TCP_REVSW_MINOR		1
-#define TCP_REVSW_SUBLEVEL	12
+#ifndef TCP_REVSW_MAJOR
+	#define TCP_REVSW_MAJOR		2
+#endif
+
+#ifndef TCP_REVSW_MINOR
+	#define TCP_REVSW_MINOR		0
+#endif
+
+#ifndef TCP_REVSW_SUBLEVEL
+	#define TCP_REVSW_SUBLEVEL	0
+#endif
 
 #endif /* __TCP_REVSW_VERSION_H__ */
