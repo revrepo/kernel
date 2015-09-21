@@ -42,7 +42,7 @@ sublevel=$ci
 
 modVersion=$major.$minor.$sublevel
 
-make ARCH=x86_64 -C $linuxDir M=$PWD
+make ARCH=x86_64 -C $linuxDir M=$PWD TCP_REVSW_MAJOR=2 TCP_REVSW_MINOR=0 TCP_REVSW_SUBLEVEL=$ci
 
 modFiles=$(ls *.ko)
 
